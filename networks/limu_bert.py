@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# from wtconv import WTConv2d
+
 
 def split_last(x, shape):
     "split the last dimension to given shape"
@@ -145,6 +147,7 @@ class Transformer(nn.Module):
         self.embed = Embeddings(cfg)
         # Original BERT not used parameter-sharing strategies
         # self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layers)])
+        # self.wtconv = WTConv2d(cfg.hidden, cfg.hidden, kernel_size=3, wt_levels = 3)
 
         # To used parameter-sharing strategies
         self.n_layers = cfg.n_layers
@@ -155,8 +158,13 @@ class Transformer(nn.Module):
         self.norm2 = LayerNorm(cfg)
         # self.drop = nn.Dropout(cfg.p_drop_hidden)
 
+
     def forward(self, x):
         h = self.embed(x)
+
+        # h = h.unsqueeze(1)
+        # h = self.wtconv(h)
+        # h = h.squeeze(1)
 
         for _ in range(self.n_layers):
             # h = block(h, mask)
@@ -164,6 +172,7 @@ class Transformer(nn.Module):
             h = self.norm1(h + self.proj(h))
             h = self.norm2(h + self.pwff(h))
         return h
+
 
 
 class LIMUBertModel4Pretrain(nn.Module):

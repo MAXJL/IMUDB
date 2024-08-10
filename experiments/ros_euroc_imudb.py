@@ -13,51 +13,6 @@ import pandas as pd
 import os
 
 
-
-def save_to_csv(filename, timestamps, outputs, save_all=False):
-    # Check if the file exists and if it is empty
-    file_exists = os.path.exists(filename) and os.path.getsize(filename) > 0
-    
-    # Ensure outputs is detached, on CPU, and numpy formatted
-    outputs = outputs.detach().cpu().numpy()
-
-    if save_all:
-        # 保存全部数据点
-        df_timestamps = pd.DataFrame(timestamps, columns=["#timestamp [ns]"])
-        df_outputs = pd.DataFrame(outputs, columns=[
-            "w_RS_S_x [rad s^-1]", "w_RS_S_y [rad s^-1]", "w_RS_S_z [rad s^-1]",
-            "a_RS_S_x [m s^-2]", "a_RS_S_y [m s^-2]", "a_RS_S_z [m s^-2]"
-        ])
-    else:
-        # 仅保存最后一个数据点
-        df_timestamps = pd.DataFrame([timestamps[-1]], columns=["#timestamp [ns]"])
-        df_outputs = pd.DataFrame([outputs[-1]], columns=[
-            "w_RS_S_x [rad s^-1]", "w_RS_S_y [rad s^-1]", "w_RS_S_z [rad s^-1]",
-            "a_RS_S_x [m s^-2]", "a_RS_S_y [m s^-2]", "a_RS_S_z [m s^-2]"
-        ])
-    
-    # Concatenate along the columns
-    df = pd.concat([df_timestamps, df_outputs], axis=1)
-    
-    # Determine whether to write header: if the file doesn't exist or is empty
-    header = not file_exists  # Write header if file does not exist or is empty
-    df.to_csv(filename, mode='a', header=header, index=False)
-    
-    print(f"Saved data to {filename} with {'header' if header else 'no header'}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 """
 # the model_fp can be either onnx or chekpoints
 python experiments/ros_euroc.py  process_bags \
@@ -66,7 +21,6 @@ python experiments/ros_euroc.py  process_bags \
 --config_fp=logs_1080ti/euroc/dev_add_noise_and_noise_scale_0.001_self_penalty_2021-10-30T12:31:50.078953-07:00/hparams.yaml \
 --model_fp=checkpoints_1080ti/euroc/dev_add_noise_and_noise_scale_0.001_self_penalty_2021-10-30T12:31:50.078953-07:00/euroc-epoch=312-val_loss=0.00.onnx
 """
-
 
 def process_bags(bag_root, bag_names, model_fp, config_fp):
     if 'onnx' in model_fp:
@@ -81,7 +35,6 @@ def process_bags(bag_root, bag_names, model_fp, config_fp):
         p = multiprocessing.Process(target=backend, args=(bag_fp, model_fp, config_fp, model))
         jobs.append(p)
         p.start()
-
 
 """
 # Below is the benchmark run in the slides:
@@ -186,21 +139,12 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
 
                 print(f"imu output: {hat_imu_now}")
 
-
             new_bag.write(topic, new_imu_msg, new_imu_msg.header.stamp)
         else:
             new_bag.write(topic, msg, msg.header.stamp)
 
     bag.close()
     new_bag.close()
-
-    # #打印timestamps_buffer的长度
-    # print(f"timestamps_buffer length is {len(timestamps_buffer)}")
-    # #imu_outputs的shape
-    # print(f"imu_outputs shape is {np.array(imu_outputs).shape}")
-
-    # if output_csv_fp:
-    #     save_to_csv(output_csv_fp, timestamps_buffer, torch.tensor(imu_outputs), save_all=True)
 
     print("Benchmark done for {} with max loss as {}, skipping {} / {}".format(bag_fp, max_loss, reject_cnt, msg_cnt))
 
