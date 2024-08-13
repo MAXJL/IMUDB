@@ -16,7 +16,6 @@ data:
     val: true
     test: true
   batch_size: 1024
-
   # where are raw data ?
   data_dir: "/home/jia/MA/IMUDB-main/EuRoC/Raw"
   # where record preloaded data ?

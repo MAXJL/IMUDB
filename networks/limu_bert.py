@@ -3,8 +3,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from wtconv1d import WTConv1d
 
-# from wtconv import WTConv2d
+# from mLSTM import mLSTM
+# from sLSTM import sLSTM
 
 
 def split_last(x, shape):
@@ -147,7 +152,6 @@ class Transformer(nn.Module):
         self.embed = Embeddings(cfg)
         # Original BERT not used parameter-sharing strategies
         # self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layers)])
-        # self.wtconv = WTConv2d(cfg.hidden, cfg.hidden, kernel_size=3, wt_levels = 3)
 
         # To used parameter-sharing strategies
         self.n_layers = cfg.n_layers
@@ -157,15 +161,10 @@ class Transformer(nn.Module):
         self.pwff = PositionWiseFeedForward(cfg)
         self.norm2 = LayerNorm(cfg)
         # self.drop = nn.Dropout(cfg.p_drop_hidden)
-
-
     def forward(self, x):
+        # print(x.shape
         h = self.embed(x)
-
-        # h = h.unsqueeze(1)
-        # h = self.wtconv(h)
-        # h = h.squeeze(1)
-
+        # print("Embedding output h shape:", h.shape)
         for _ in range(self.n_layers):
             # h = block(h, mask)
             h = self.attn(h)
@@ -174,12 +173,41 @@ class Transformer(nn.Module):
         return h
 
 
+class WaveletTransformer(nn.Module):
+    def __init__(self, cfg):
+
+        super(WaveletTransformer, self).__init__()
+
+        self.wtconv1d = WTConv1d(
+            in_channels=cfg.feature_num, 
+            out_channels=cfg.feature_num, 
+            kernel_size=5, 
+            wt_levels=2)
+        
+        self.transformer = Transformer(cfg)
+    def forward(self, x):
+        # print(f"Input shape before permute: {x.shape}")
+        # 从 [1024, 30, 6] 转换为 [1024, 6, 30]
+        x = x.permute(0, 2, 1)
+        # print(f"Shape after permute to [1024, 6, 30]: {x.shape}")
+        # 通过 WTConv1d 处理
+        x = self.wtconv1d(x)
+        # 再从 [1024, 6, 30] 转换回 [1024, 30, 6]
+        x = x.permute(0, 2, 1)
+        # print(f"Shape after permute back to [1024, 30, 6]: {x.shape}")
+        # 然后将处理后的数据传递给 Transformer
+        x = self.transformer(x)
+        return x
+
 
 class LIMUBertModel4Pretrain(nn.Module):
 
     def __init__(self, cfg, output_embed=False):
         super().__init__()
+
         self.transformer = Transformer(cfg) # encoder
+        self.wavelet_transformer = WaveletTransformer(cfg)
+
         self.fc = nn.Linear(cfg.hidden, cfg.hidden)
         self.linear = nn.Linear(cfg.hidden, cfg.hidden)
         self.activ = gelu
@@ -187,8 +215,19 @@ class LIMUBertModel4Pretrain(nn.Module):
         self.decoder = nn.Linear(cfg.hidden, cfg.feature_num)
         self.output_embed = output_embed
 
+        
+
+
     def forward(self, input_seqs, masked_pos=None):
-        h_masked = self.transformer(input_seqs)
+
+        # print("input_seqs shape:", input_seqs.shape)
+
+        h_masked = self.wavelet_transformer(input_seqs)
+
+        # h_masked = self.transformer(input_seqs)
+        
+        # print("Transformer output h shape:", h_masked.shape)
+
         if self.output_embed:
             return h_masked
         if masked_pos is not None:

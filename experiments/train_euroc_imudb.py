@@ -45,7 +45,8 @@ def train(config_fp='configs/euroc_imudb.yaml', checkpoint_path=None):
         mode="min",
     )
     model = Model(config)
-    trainer = pl.Trainer(gpus=1, max_epochs=100000,
+    trainer = pl.Trainer(gpus=1,
+                          max_epochs=100000,
                           logger=logger, 
                           callbacks=[lr_monitor, checkpoint_callback],
                           resume_from_checkpoint=checkpoint_path)
