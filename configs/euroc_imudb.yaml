@@ -67,6 +67,7 @@ model:
     nn_arch: 'limu_bert' # This is not used in the experiment. Just for reference
     # Below are copied from https://github.com/dapowan/LIMU-BERT-Public/blob/master/config/limu_bert.json#L4-L9
     feature_num: 6
+    # hidden: 72
     hidden: 72
     hidden_ff: 144
     n_layers: 4

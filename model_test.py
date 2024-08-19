@@ -52,7 +52,7 @@ def save_to_csv(filename, timestamps, outputs, save_all=False):
 
 
 def main():
-    model_path = "/home/jia/MA/IMUDB-main/checkpoints_jiab760gubuntu2004/euroc_imudb/dev_imudb_2024-08-07T08:46:40.284296-07:00/euroc_imudb-epoch=2382-val_denoise_loss=0.000011.ckpt"
+    model_path = "/home/jia/MA/IMUDB-main/checkpoints_jiab760gubuntu2004/euroc_imudb/dev_imudb_2024-08-12T18:38:14.110504-07:00/euroc_imudb-epoch=491-val_denoise_loss=0.000257.ckpt"
     output_filename = "/home/jia/MA/IMUDB-main/result/MH02/new_imu_data.csv"
     filename = "/home/jia/datasets/euroc/MH02/imu0/gt_backup/data.csv"
     

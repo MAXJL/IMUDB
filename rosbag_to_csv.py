@@ -31,6 +31,6 @@ def bag_to_csv(bag_file, output_csv):
     print(f"Saved data to {output_csv}")
 
 if __name__ == "__main__":
-    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/V1_01_easy.bag.new.imudb2.bag'  # 替换为您的bag文件路径
-    output_csv = '/home/jia/MA/IMUDB-main/result/V101/new_imu_data.csv'  # 替换为您希望保存的csv文件路径
+    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/V2_03_difficult.bag.new.imudb2.bag'  # 替换为您的bag文件路径
+    output_csv = '/home/jia/MA/IMUDB-main/result/V203/4000epoch_Transfoemer_data.csv'  # 替换为您希望保存的csv文件路径
     bag_to_csv(bag_file, output_csv)

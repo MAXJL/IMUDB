@@ -200,13 +200,15 @@ class WaveletTransformer(nn.Module):
         return x
 
 
+
 class LIMUBertModel4Pretrain(nn.Module):
 
     def __init__(self, cfg, output_embed=False):
         super().__init__()
 
         self.transformer = Transformer(cfg) # encoder
-        self.wavelet_transformer = WaveletTransformer(cfg)
+
+        # self.wavelet_transformer = WaveletTransformer(cfg)
 
         self.fc = nn.Linear(cfg.hidden, cfg.hidden)
         self.linear = nn.Linear(cfg.hidden, cfg.hidden)
@@ -222,9 +224,9 @@ class LIMUBertModel4Pretrain(nn.Module):
 
         # print("input_seqs shape:", input_seqs.shape)
 
-        h_masked = self.wavelet_transformer(input_seqs)
+        # h_masked = self.wavelet_transformer(input_seqs)
 
-        # h_masked = self.transformer(input_seqs)
+        h_masked = self.transformer(input_seqs)
         
         # print("Transformer output h shape:", h_masked.shape)
 

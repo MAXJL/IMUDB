@@ -40,8 +40,31 @@ def inverse_wavelet_transform_1d(x, filters):
     return x
 
 
+
+class MultiLayerWTConv1d(nn.Module):
+    def __init__(self, num_layers, in_channels, out_channels, kernel_size=5, wt_levels=2):
+        super(MultiLayerWTConv1d, self).__init__()
+        
+        # 确保输入输出维度一致
+        assert in_channels == out_channels
+        
+        # 创建多个 WTConv1d 层
+        self.layers = nn.ModuleList([
+            WTConv1d(in_channels, out_channels, kernel_size, wt_levels=wt_levels)
+            for _ in range(num_layers)
+        ])
+        
+    def forward(self, x):
+        # 依次通过每一层 WTConv1d
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+
+
 class WTConv1d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=5, stride=1, bias=True, wt_levels=1, wt_type='db1'):
+    def __init__(self, in_channels, out_channels, kernel_size=5, stride=1, bias=True, wt_levels=2, wt_type='db1'):
         super(WTConv1d, self).__init__()
 
         assert in_channels == out_channels
@@ -166,8 +189,12 @@ if __name__ == '__main__':
     # 实例化 WTConv1d
     wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=kernel_size, wt_levels=wt_levels)
 
+    multi_wtconv1d_layer = MultiLayerWTConv1d(num_layers=3, in_channels=6, out_channels=6, kernel_size=7, wt_levels=4)
+
     # 前向传播，计算输出
-    output_data = wtconv1d_layer(input_data)
+    # output_data = wtconv1d_layer(input_data)
+
+    output_data = multi_wtconv1d_layer(input_data)
 
     # 打印输出的形状
     print(f"Input shape: {input_data.shape}")
