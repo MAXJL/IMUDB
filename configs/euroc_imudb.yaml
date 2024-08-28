@@ -68,12 +68,13 @@ model:
     # Below are copied from https://github.com/dapowan/LIMU-BERT-Public/blob/master/config/limu_bert.json#L4-L9
     feature_num: 6
     # hidden: 72
-    hidden: 72
+    hidden: 48
     hidden_ff: 144
     n_layers: 4
     n_heads: 4
     seq_len: 120
     emb_norm: true
+    
   onnx:
     inputs: ['x_imu']
     outputs: ['hat_imu']

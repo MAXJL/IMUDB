@@ -40,6 +40,24 @@ def inverse_wavelet_transform_1d(x, filters):
     return x
 
 
+class SEBlock(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1)
+        return x * y.expand_as(x)
+
+
 
 class MultiLayerWTConv1d(nn.Module):
     def __init__(self, num_layers, in_channels, out_channels, kernel_size=5, wt_levels=2):
@@ -59,9 +77,128 @@ class MultiLayerWTConv1d(nn.Module):
         for layer in self.layers:
             x = layer(x)
         return x
+    
+class CustomCNN(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, dilation_rates, dropout):
+        super(CustomCNN, self).__init__()
+        c0 = 16
+        c1 = 2 * c0
+        c2 = 2 * c1
+        c3 = 2 * c2
+        p0 = (kernel_size-1) + dilation_rates[0]*(kernel_size-1) + dilation_rates[0]*dilation_rates[1]*(kernel_size-1) + dilation_rates[0]*dilation_rates[1]*dilation_rates[2]*(kernel_size-1)
+        self.cnn = nn.Sequential(
+            nn.ReplicationPad1d((p0, 0)),  # padding at start
+            nn.Conv1d(in_channels, c0, kernel_size, dilation=1),
+            nn.BatchNorm1d(c0),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(c0, c1, kernel_size, dilation=dilation_rates[0]),
+            nn.BatchNorm1d(c1),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(c1, c2, kernel_size, dilation=dilation_rates[0]*dilation_rates[1]),
+            nn.BatchNorm1d(c2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(c2, c3, kernel_size, dilation=dilation_rates[0]*dilation_rates[1]*dilation_rates[2]),
+            nn.BatchNorm1d(c3),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Conv1d(c3, out_channels, 1, dilation=1)
+        )
+    def forward(self, x):
+        return self.cnn(x)
+
+class IntegratedWTConv1d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=5, dropout=0.5, stride=1, bias=True, wt_levels=2, wt_type='db1', dilation_rates=[4, 4, 4]):
+        super(IntegratedWTConv1d, self).__init__()
+
+        assert in_channels == out_channels
+
+        self.in_channels = in_channels
+        self.wt_levels = wt_levels
+        self.stride = stride
+        self.dilation_rates = dilation_rates
+
+        self.wt_filter, self.iwt_filter = create_wavelet_filter(wt_type, in_channels, in_channels, torch.float)
+        self.wt_filter = nn.Parameter(self.wt_filter, requires_grad=False)
+        self.iwt_filter = nn.Parameter(self.iwt_filter, requires_grad=False)
+
+        self.wt_function = partial(wavelet_transform_1d, filters=self.wt_filter)
+        self.iwt_function = partial(inverse_wavelet_transform_1d, filters=self.iwt_filter)
 
 
+        self.cnn = CustomCNN(in_channels, in_channels, kernel_size, dilation_rates, dropout)
 
+        self.base_scale = _ScaleModule([1, in_channels, 1])
+        wavelet_out_channels = in_channels * 2
+
+        # 将 GyroNet 的卷积结构替换为 wavelet_convs
+        self.wavelet_convs = nn.ModuleList(
+            [CustomCNN(wavelet_out_channels, wavelet_out_channels, kernel_size, dilation_rates, dropout) for _ in range(self.wt_levels)]
+        )
+        self.wavelet_scale = nn.ModuleList(
+            [_ScaleModule([1, wavelet_out_channels, 1], init_scale=0.1) for _ in range(self.wt_levels)]
+        )
+        # 条件处理 stride
+        if self.stride > 1:
+            self.stride_filter = nn.Parameter(torch.ones(in_channels, 1, 1), requires_grad=False)
+            self.do_stride = lambda x_in: F.conv1d(x_in, self.stride_filter, bias=None, stride=self.stride, groups=in_channels)
+        else:
+            self.do_stride = None
+
+    def forward(self, x):
+        x_ll_in_levels = []
+        x_h_in_levels = []
+        shapes_in_levels = []
+
+        curr_x_ll = x
+        for i in range(self.wt_levels):
+            curr_shape = curr_x_ll.shape
+            shapes_in_levels.append(curr_shape)
+            if (curr_shape[2] % 2 > 0):
+                curr_pads = (0, curr_shape[2] % 2)
+                curr_x_ll = F.pad(curr_x_ll, curr_pads)
+
+            curr_x = self.wt_function(curr_x_ll)
+            curr_x_ll = curr_x[:, :, 0]
+            
+            shape_x = curr_x.shape
+            curr_x_tag = curr_x.reshape(shape_x[0], shape_x[1] * 2, shape_x[3])
+            
+            # 使用GyroNet中的卷积结构替换原有的Conv1d操作
+            curr_x_tag = self.wavelet_scale[i](self.wavelet_convs[i](curr_x_tag))
+            curr_x_tag = curr_x_tag.reshape(shape_x)
+
+            x_ll_in_levels.append(curr_x_tag[:, :, 0])
+            x_h_in_levels.append(curr_x_tag[:, :, 1])
+
+        next_x_ll = 0
+
+        for i in range(self.wt_levels - 1, -1, -1):
+            curr_x_ll = x_ll_in_levels.pop()
+            curr_x_h = x_h_in_levels.pop()
+            curr_shape = shapes_in_levels.pop()
+
+            curr_x_ll = curr_x_ll + next_x_ll
+
+            curr_x = torch.cat([curr_x_ll.unsqueeze(2), curr_x_h.unsqueeze(2)], dim=2)
+            next_x_ll = self.iwt_function(curr_x)
+
+            next_x_ll = next_x_ll[:, :, :curr_shape[2]]
+
+        x_tag = next_x_ll
+        assert len(x_ll_in_levels) == 0
+
+        x = self.base_scale(x)
+
+        x = x + x_tag
+
+        # 如果 stride > 1，则进行 stride 操作
+        if self.do_stride is not None:
+            x = self.do_stride(x)
+
+        return x
 
 class WTConv1d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=5, stride=1, bias=True, wt_levels=2, wt_type='db1'):
@@ -97,9 +234,6 @@ class WTConv1d(nn.Module):
             self.do_stride = lambda x_in: F.conv1d(x_in, self.stride_filter, bias=None, stride=self.stride, groups=in_channels)
         else:
             self.do_stride = None
-
-
- 
 
     def forward(self, x):
 
@@ -170,7 +304,6 @@ class _ScaleModule(nn.Module):
             return torch.mul(weight, x)
 
 
-
 if __name__ == '__main__':
     # 定义输入的参数
     batch_size = 1024  # Batch size
@@ -186,16 +319,29 @@ if __name__ == '__main__':
     kernel_size = 5
     wt_levels = 2  # 小波分解的层数
 
+
+    dilation_rates=[2, 2, 2]
+
+
     # 实例化 WTConv1d
-    wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=kernel_size, wt_levels=wt_levels)
+    wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=5, wt_levels=2)
 
-    multi_wtconv1d_layer = MultiLayerWTConv1d(num_layers=3, in_channels=6, out_channels=6, kernel_size=7, wt_levels=4)
+    multi_wtconv1d_layer = MultiLayerWTConv1d(num_layers=3, in_channels=6, out_channels=6, kernel_size=5, wt_levels=2)
 
+    #实例化IntegratedWTConv1d
+
+    integrated_wtconv1d_layer = IntegratedWTConv1d(in_channels=6, out_channels=6, kernel_size=5, wt_levels=2, dilation_rates=dilation_rates)
     # 前向传播，计算输出
+    #计算推理时间
+    import time
+    start = time.time()
     # output_data = wtconv1d_layer(input_data)
-
-    output_data = multi_wtconv1d_layer(input_data)
+    # output_data = multi_wtconv1d_layer(input_data)
+    output_data = integrated_wtconv1d_layer(input_data)
+    end = time.time()
+    print(f"Time: {end - start}")
 
     # 打印输出的形状
     print(f"Input shape: {input_data.shape}")
     print(f"Output shape: {output_data.shape}")
+    

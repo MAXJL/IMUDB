@@ -7,6 +7,9 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from wtconv1d import WTConv1d
+from wtconv1d import MultiLayerWTConv1d
+from wtconv1d import IntegratedWTConv1d
+from wtconv1d import SEBlock
 
 # from mLSTM import mLSTM
 # from sLSTM import sLSTM
@@ -178,20 +181,46 @@ class WaveletTransformer(nn.Module):
 
         super(WaveletTransformer, self).__init__()
 
-        self.wtconv1d = WTConv1d(
+        # self.wtconv1d = WTConv1d(
+        #     in_channels=cfg.feature_num, 
+        #     out_channels=cfg.feature_num, 
+        #     kernel_size=7, 
+        #     wt_levels=3,
+        #     )
+
+        self.multiwtconv1d = MultiLayerWTConv1d(
             in_channels=cfg.feature_num, 
             out_channels=cfg.feature_num, 
-            kernel_size=5, 
-            wt_levels=2)
+            kernel_size=7, 
+            wt_levels=3,
+            num_layers=3)
         
+        
+        
+        # self.intergratedwtconv1d = IntegratedWTConv1d(
+        #     in_channels=cfg.feature_num, 
+        #     out_channels=cfg.feature_num, 
+        #     kernel_size=5, 
+        #     wt_levels=2,
+        #     dropout=0.5,
+        #     dilation_rates=[1, 2, 4])
+        
+        # self.se_block = SEBlock(cfg.feature_num)  # 配置 SEBlock
+
         self.transformer = Transformer(cfg)
+
     def forward(self, x):
         # print(f"Input shape before permute: {x.shape}")
         # 从 [1024, 30, 6] 转换为 [1024, 6, 30]
         x = x.permute(0, 2, 1)
         # print(f"Shape after permute to [1024, 6, 30]: {x.shape}")
         # 通过 WTConv1d 处理
-        x = self.wtconv1d(x)
+        # x = self.wtconv1d(x)
+        x = self.multiwtconv1d(x)
+        # x = self.intergratedwtconv1d(x)
+
+        # x = self.se_block(x)  # 通过 SEBlock 处理
+
         # 再从 [1024, 6, 30] 转换回 [1024, 30, 6]
         x = x.permute(0, 2, 1)
         # print(f"Shape after permute back to [1024, 30, 6]: {x.shape}")
@@ -208,7 +237,7 @@ class LIMUBertModel4Pretrain(nn.Module):
 
         self.transformer = Transformer(cfg) # encoder
 
-        # self.wavelet_transformer = WaveletTransformer(cfg)
+        self.wavelet_transformer = WaveletTransformer(cfg)
 
         self.fc = nn.Linear(cfg.hidden, cfg.hidden)
         self.linear = nn.Linear(cfg.hidden, cfg.hidden)
@@ -224,9 +253,9 @@ class LIMUBertModel4Pretrain(nn.Module):
 
         # print("input_seqs shape:", input_seqs.shape)
 
-        # h_masked = self.wavelet_transformer(input_seqs)
+        h_masked = self.wavelet_transformer(input_seqs)
 
-        h_masked = self.transformer(input_seqs)
+        # h_masked = self.transformer(input_seqs)
         
         # print("Transformer output h shape:", h_masked.shape)
 

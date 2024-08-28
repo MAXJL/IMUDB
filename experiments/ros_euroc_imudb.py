@@ -11,6 +11,7 @@ from models.imudb import Model
 import torch
 import pandas as pd
 import os
+import time
 
 
 """
@@ -80,6 +81,8 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
 
     print("Running benchmark ....")
     max_loss = 0
+    total_inference_time = 0  # 总推理时间
+    inference_count = 0  # 推理次数
     for topic, msg, t in bag.read_messages():
         if topic == '/cam0/image_raw':
             # https://github.com/eric-wieser/ros_numpy
@@ -107,8 +110,17 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
             if buffer_is_valid:
                 x_imu_infer = np.array([x_imu_buffer]).astype(np.float32)
                 x_imu_infer[:, :, 3:] = x_imu_infer[:, :, 3:] / 9.8
+
+                start_time = time.time()
+
                 hat_imu = backend(torch.tensor(x_imu_infer))
 
+                end_time = time.time()
+                inference_time = end_time - start_time
+                total_inference_time += inference_time
+                inference_count += 1
+                print(f"Inference time for this step: {inference_time:.6f} seconds")
+                
                 hat_imu = hat_imu.detach().numpy()
                 # denorm
                 hat_imu = hat_imu[0]
