@@ -2,14 +2,15 @@ name: py36env
 channels:
   - pytorch
   - nvidia
+  - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
   - _openmp_mutex=5.1=1_gnu
   - blas=1.0=mkl
   - bzip2=1.0.8=h5eee18b_6
-  - ca-certificates=2024.7.2=h06a4308_0
-  - certifi=2021.5.30=py36h06a4308_0
+  - ca-certificates=2024.7.4=hbcca054_0
+  - certifi=2021.5.30=py36h5fab9bb_0
   - cuda-cudart=11.8.89=0
   - cuda-cupti=11.8.87=0
   - cuda-libraries=11.8.0=0
@@ -60,12 +61,14 @@ dependencies:
   - olefile=0.46=py36_0
   - openh264=2.1.1=h4ff587b_0
   - openjpeg=2.4.0=h9ca470c_2
-  - openssl=1.1.1w=h7f8727e_0
+  - openssl=1.1.1o=h166bdaf_0
   - pip=21.2.2=py36h06a4308_0
   - python=3.6.13=h12debd9_1
+  - python_abi=3.6=2_cp36m
   - pytorch=1.10.2=py3.6_cuda11.3_cudnn8.2.0_0
   - pytorch-cuda=11.8=h7e8668a_5
   - pytorch-mutex=1.0=cuda
+  - pywavelets=1.1.1=py36he33b4a0_3
   - readline=8.2=h5eee18b_0
   - setuptools=58.0.4=py36h06a4308_0
   - six=1.16.0=pyhd3eb1b0_1
