@@ -10,6 +10,18 @@ from wtconv1d import WTConv1d
 from wtconv1d import MultiLayerWTConv1d
 from wtconv1d import IntegratedWTConv1d
 from wtconv1d import SEBlock
+from wtconv1d import W_Transform
+
+from functools import partial
+import pywt
+import pywt.data
+from wtconv1d import wavelet_transform_1d
+from wtconv1d import inverse_wavelet_transform_1d
+from wtconv1d import create_wavelet_filter
+
+from wtconv1d import w_transform
+from wtconv1d import inverse_wavelet_transform
+
 
 # from mLSTM import mLSTM
 # from sLSTM import sLSTM
@@ -83,6 +95,7 @@ class Embeddings(nn.Module):
             e = self.norm(e)
         #将位置编码pos加到嵌入e上
         e = e + self.pos_embed(pos)
+        # print("Embeddings e shape:", e.shape)
         #再次归一化
         return self.norm(e)
 
@@ -122,6 +135,7 @@ class MultiHeadedSelfAttention(nn.Module):
         h = (scores @ v).transpose(1, 2).contiguous()
         h = merge_last(h, 2)
         self.scores = scores
+        # print("MultiHeadedSelfAttention h shape:", h.shape)
         return h
 
 
@@ -145,6 +159,7 @@ class PositionWiseFeedForward(nn.Module):
 
     def forward(self, x):
         # (B, S, D) -> (B, S, D_ff) -> (B, S, D)
+        # print("PositionWiseFeedForward x shape:", self.fc2(gelu(self.fc1(x))).shape)
         return self.fc2(gelu(self.fc1(x)))
 
 
@@ -184,8 +199,8 @@ class WaveletTransformer(nn.Module):
         # self.wtconv1d = WTConv1d(
         #     in_channels=cfg.feature_num, 
         #     out_channels=cfg.feature_num, 
-        #     kernel_size=7, 
-        #     wt_levels=3,
+        #     kernel_size=5, 
+        #     wt_levels=2,
         #     )
 
         self.multiwtconv1d = MultiLayerWTConv1d(
@@ -195,7 +210,7 @@ class WaveletTransformer(nn.Module):
             wt_levels=3,
             num_layers=3)
         
-        
+
         
         # self.intergratedwtconv1d = IntegratedWTConv1d(
         #     in_channels=cfg.feature_num, 
@@ -205,6 +220,7 @@ class WaveletTransformer(nn.Module):
         #     dropout=0.5,
         #     dilation_rates=[1, 2, 4])
         
+
         # self.se_block = SEBlock(cfg.feature_num)  # 配置 SEBlock
 
         self.transformer = Transformer(cfg)
@@ -230,6 +246,80 @@ class WaveletTransformer(nn.Module):
 
 
 
+class WT_Inter_Transformer(nn.Module):
+    def __init__(self, cfg, in_channels,out_channels,wt_levels=2, wt_type='db1'):
+        super(WT_Inter_Transformer, self).__init__()
+
+        self.transformer = Transformer(cfg)
+
+        assert in_channels == out_channels
+        self.in_channels = in_channels
+        self.wt_levels = wt_levels
+
+        self.wt_type = wt_type
+
+        self.wt_filter, self.iwt_filter = create_wavelet_filter(wt_type, in_channels, in_channels, torch.float)
+        # print(f"WT filter shape: {self.wt_filter.shape}")
+        # print(f"IWT filter shape: {self.iwt_filter.shape}")
+        self.wt_function = partial(wavelet_transform_1d, filters = self.wt_filter)
+        self.iwt_function = partial(inverse_wavelet_transform_1d, filters = self.iwt_filter) 
+        # self.adaptive_conv = nn.Conv1d(in_channels=12, out_channels=6, kernel_size=1)
+
+    def forward(self, x):
+        # Step 1: 小波变换
+        # x shape: [1024, 30, 6]
+        #reshape x to [1024, 6, 30]
+        x = x.permute(0, 2, 1)
+        x = self.wt_function(x) #shape: b, c, 2, w // 2 [1024, 6, 2, 15]
+        # x shape: [1024, 6, 2, 15]
+        #reshape x to [1024, 12, 15]
+        x = x.view(x.size(0), x.size(1) * 2, x.size(3))
+        # reshape: [1024, 15, 12]  for transformer
+        x = x.permute(0, 2, 1)
+
+        print("x shape after wt:", x.shape)
+
+        # Step 2: Transformer
+        x = self.transformer(x)
+        print("Transformer output h shape:", x.shape)
+        #x shape: [1024, 15, 72]
+        #reshape x for inverse wavelet transform
+        #step 3: 准备小波逆变换 
+        # batch_size, seq_length, feature_dim = x.shape # [1024, 15, 72]
+        # print("batch_size, seq_length, feature_dim:", batch_size, seq_length, feature_dim)
+        # num_channels = feature_dim // 2 # 72 // 2 = 36
+        # # reshape x for inverse wavelet transform
+        # x = x.permute(0, 2, 1) # [1024, 72, 15]
+        # x = x.view(batch_size, num_channels, 2, seq_length) #[1024, 36, 2, 15]
+        # # Step 4: 小波逆变换
+        # print("x shape before iwt:", x.shape)
+        # x = self.iwt_function(x)
+        # # x shape: [1024, 36, 30]
+        # x = x.permute(0, 2, 1) # [1024, 30, 36]
+
+        return x
+
+
+class W_Transform_without_inverseW(nn.Module):
+    def __init__(self, cfg):
+        super(W_Transform_without_inverseW, self).__init__()
+
+        self.transformer = Transformer(cfg)
+
+    def forward(self, x):
+        
+        device = x.device  # 获取输入张量所在的设备
+        self.transformer.to(device)  # 将 transformer 模型移动到相同的设备
+
+        x = w_transform(x, wavelet='db1') # [1024, 15, 12]
+
+        x = self.transformer(x) # [1024, 15, 72]
+
+        return x
+
+
+    
+
 class LIMUBertModel4Pretrain(nn.Module):
 
     def __init__(self, cfg, output_embed=False):
@@ -237,34 +327,68 @@ class LIMUBertModel4Pretrain(nn.Module):
 
         self.transformer = Transformer(cfg) # encoder
 
-        self.wavelet_transformer = WaveletTransformer(cfg)
+        # self.wavelet_transformer = WaveletTransformer(cfg)
 
+        # self.wt_inter_transformer = WT_Inter_Transformer(cfg, in_channels=6, out_channels=6, wt_levels=2, wt_type='db1')
+
+        # self.W_Transform_without_inverseW = W_Transform_without_inverseW(cfg) 
+      
         self.fc = nn.Linear(cfg.hidden, cfg.hidden)
         self.linear = nn.Linear(cfg.hidden, cfg.hidden)
+        # self.linear = nn.Linear(72,72)
+
         self.activ = gelu
         self.norm = LayerNorm(cfg)
         self.decoder = nn.Linear(cfg.hidden, cfg.feature_num)
         self.output_embed = output_embed
 
-        
+        self.wtdecoder = nn.Linear(cfg.hidden, cfg.feature_num)
+
 
 
     def forward(self, input_seqs, masked_pos=None):
 
+        device = input_seqs.device  # 获取输入张量所在的设备
+        input_seqs = input_seqs.to(device)  # 确保输入张量在正确的设备上
+
         # print("input_seqs shape:", input_seqs.shape)
 
-        h_masked = self.wavelet_transformer(input_seqs)
 
-        # h_masked = self.transformer(input_seqs)
-        
+        # input_seqs = w_transform(input_seqs, wavelet='db1') # [1024, 15, 12]
+
+        # print("input_seqs shape after w_transform:", input_seqs.shape)
+
+        # h_masked = self.wavelet_transformer(input_seqs)
+
+        h_masked = self.transformer(input_seqs)
+
+        # h_masked = self.wt_inter_transformer(input_seqs) 
+
+        # h_masked = self.W_Transform_without_inverseW(input_seqs)   
+                
         # print("Transformer output h shape:", h_masked.shape)
 
         if self.output_embed:
             return h_masked
         if masked_pos is not None:
+            # print("masked_pos shape:", masked_pos.shape)
             masked_pos = masked_pos[:, :, None].expand(-1, -1, h_masked.size(-1))
             h_masked = torch.gather(h_masked, 1, masked_pos)
+
+        
+        # print("before linear h_masked shape:", h_masked.shape)
+
         h_masked = self.activ(self.linear(h_masked))
+        # print("after linear h_masked shape:", h_masked.shape)
+        
         h_masked = self.norm(h_masked)
+        # print("after norm h_masked shape:", h_masked.shape)
+
         logits_lm = self.decoder(h_masked)
+
+        # print("logits_lm :", logits_lm)
+        # print("logits_lm shape:", logits_lm.shape)
         return logits_lm
+    
+
+

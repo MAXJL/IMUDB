@@ -12,7 +12,8 @@ import torch
 import pandas as pd
 import os
 import time
-
+import rospy
+from std_msgs.msg import Float32
 
 """
 # the model_fp can be either onnx or chekpoints
@@ -47,10 +48,17 @@ python experiments/ros_euroc_imudb.py  process_a_bag_with_ckpts \
 
 
 def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None, get_model=False, output_csv_fp=None):
+    
+    rospy.init_node('uncertainty_publisher')
+    uncertainty_pub = rospy.Publisher('/uncertainty', Float32, queue_size=10)
+    
     REJECT_MSE_THRE = 0.001
     ROUND_DIGIT = 6
     reject_cnt = 0
     msg_cnt = 0
+
+    uncertainty_accum = 0
+    num_imu_processed = 0
 
     print("Processing {}....".format(bag_fp))
     with open(config_fp) as f:
@@ -131,6 +139,20 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
 
                 mse = (np.square(x_imu_buffer[-1] - hat_imu_now)).mean()
                 mse = np.round(mse, ROUND_DIGIT)
+
+                # uncertainty_value = mse
+                # uncertainty_pub.publish(uncertainty_value)
+
+                uncertainty_accum += mse
+                num_imu_processed += 1
+                if num_imu_processed == 10:
+                    average_uncertainty = uncertainty_accum / 10
+                    uncertainty_pub.publish(Float32(average_uncertainty))
+                    uncertainty_accum = 0
+                    num_imu_processed = 0
+
+
+
                 if mse > REJECT_MSE_THRE:
                     print(f"mse = {mse} > {REJECT_MSE_THRE}, Using old msg.")
                     reject_cnt += 1
