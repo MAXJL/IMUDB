@@ -43,6 +43,7 @@ def replace(data, position1, position2):
 
 def create_mask(example, mask_ratio, max_gram, mask_prob, replace_prob):
     shape = example.shape
+    # print(shape)
 
     # the number of prediction is sometimes less than max_pred when sequence is short
     n_pred = max(1, int(round(shape[0] * mask_ratio)))

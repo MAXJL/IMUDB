@@ -22,6 +22,7 @@ from wtconv1d import create_wavelet_filter
 from wtconv1d import w_transform
 from wtconv1d import inverse_wavelet_transform
 
+from common.mask import create_mask
 
 # from mLSTM import mLSTM
 # from sLSTM import sLSTM
@@ -49,6 +50,8 @@ class LayerNorm(nn.Module):
         super().__init__()
         self.gamma = nn.Parameter(torch.ones(cfg.hidden), requires_grad=True)
         self.beta = nn.Parameter(torch.zeros(cfg.hidden), requires_grad=True)
+        # self.gamma = nn.Parameter(torch.ones(36), requires_grad=True)
+        # self.beta = nn.Parameter(torch.zeros(36), requires_grad=True)
         self.variance_epsilon = variance_epsilon
 
     def forward(self, x):
@@ -57,6 +60,19 @@ class LayerNorm(nn.Module):
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
         return self.gamma * x + self.beta
 
+class LayerNorm2(nn.Module):
+    "A layernorm module in the TF style (epsilon inside the square root)."
+    def __init__(self, cfg, variance_epsilon=1e-12):
+        super().__init__()
+        self.gamma = nn.Parameter(torch.ones(36), requires_grad=True)
+        self.beta = nn.Parameter(torch.zeros(36), requires_grad=True)
+        self.variance_epsilon = variance_epsilon
+
+    def forward(self, x):
+        u = x.mean(-1, keepdim=True)
+        s = (x - u).pow(2).mean(-1, keepdim=True)
+        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
+        return self.gamma * x + self.beta
 # 这个嵌入层的主要作用是将输入的特征向量转换为适合模型处理的嵌入表示，并添加位置信息以保留序列的顺序信息。具体来说，它通过以下步骤实现这一目标：
 # 1线性变换：首先，通过线性层 self.lin 将输入特征向量 x 映射到隐藏层维度。这一步将原始特征转换为模型可以处理的嵌入表示。
 # 2位置嵌入：为了保留序列中每个元素的位置信息，嵌入层使用位置嵌入 self.pos_embed。如果没有传入位置嵌入，则创建一个新的位置嵌入层。位置嵌入的大小为序列长度 cfg.seq_len 和隐藏层维度 cfg.hidden。
@@ -185,6 +201,8 @@ class Transformer(nn.Module):
         # print("Embedding output h shape:", h.shape)
         for _ in range(self.n_layers):
             # h = block(h, mask)
+            #打印第几次循环
+            # print("Transformer loop:", _)
             h = self.attn(h)
             h = self.norm1(h + self.proj(h))
             h = self.norm2(h + self.pwff(h))
@@ -277,25 +295,27 @@ class WT_Inter_Transformer(nn.Module):
         # reshape: [1024, 15, 12]  for transformer
         x = x.permute(0, 2, 1)
 
-        print("x shape after wt:", x.shape)
+        # print("x shape after wt:", x.shape)
 
         # Step 2: Transformer
         x = self.transformer(x)
-        print("Transformer output h shape:", x.shape)
+        # print("Transformer output h shape:", x.shape)
         #x shape: [1024, 15, 72]
         #reshape x for inverse wavelet transform
         #step 3: 准备小波逆变换 
         # batch_size, seq_length, feature_dim = x.shape # [1024, 15, 72]
-        # print("batch_size, seq_length, feature_dim:", batch_size, seq_length, feature_dim)
+        # # print("batch_size, seq_length, feature_dim:", batch_size, seq_length, feature_dim)
         # num_channels = feature_dim // 2 # 72 // 2 = 36
-        # # reshape x for inverse wavelet transform
+        # # # reshape x for inverse wavelet transform
         # x = x.permute(0, 2, 1) # [1024, 72, 15]
         # x = x.view(batch_size, num_channels, 2, seq_length) #[1024, 36, 2, 15]
-        # # Step 4: 小波逆变换
-        # print("x shape before iwt:", x.shape)
+        # # # Step 4: 小波逆变换
+        # # print("x shape before iwt:", x.shape)
         # x = self.iwt_function(x)
-        # # x shape: [1024, 36, 30]
-        # x = x.permute(0, 2, 1) # [1024, 30, 36]
+        # # # x shape: [1024, 36, 30]
+        # x = x.permute(0, 2, 1) # [1024, 30, 36]p
+        # # print("x shape after iwt:", x.shape)
+
 
         return x
 
@@ -312,6 +332,8 @@ class W_Transform_without_inverseW(nn.Module):
         self.transformer.to(device)  # 将 transformer 模型移动到相同的设备
 
         x = w_transform(x, wavelet='db1') # [1024, 15, 12]
+        # print("x shape after w_transform:", x.shape)
+
 
         x = self.transformer(x) # [1024, 15, 72]
 
@@ -331,19 +353,32 @@ class LIMUBertModel4Pretrain(nn.Module):
 
         # self.wt_inter_transformer = WT_Inter_Transformer(cfg, in_channels=6, out_channels=6, wt_levels=2, wt_type='db1')
 
-        # self.W_Transform_without_inverseW = W_Transform_without_inverseW(cfg) 
+        #self.W_Transform_without_inverseW = W_Transform_without_inverseW(cfg) 
       
         self.fc = nn.Linear(cfg.hidden, cfg.hidden)
         self.linear = nn.Linear(cfg.hidden, cfg.hidden)
-        # self.linear = nn.Linear(72,72)
+        # self.linear = nn.Linear(36,36)
 
         self.activ = gelu
         self.norm = LayerNorm(cfg)
+
+        self.norm_wt = LayerNorm2(cfg)
+
         self.decoder = nn.Linear(cfg.hidden, cfg.feature_num)
+        # self.decoder = nn.Linear(cfg.hidden // 2, 6)
+
         self.output_embed = output_embed
 
         self.wtdecoder = nn.Linear(cfg.hidden, cfg.feature_num)
+        # above is  transformer initialization
 
+        wt_type = 'db1'
+        in_channels = 6
+        self.wt_filter, self.iwt_filter = create_wavelet_filter(wt_type, in_channels, in_channels, torch.float)
+        # print(f"WT filter shape: {self.wt_filter.shape}")
+        # print(f"IWT filter shape: {self.iwt_filter.shape}")
+        self.wt_function = partial(wavelet_transform_1d, filters = self.wt_filter)
+        self.iwt_function = partial(inverse_wavelet_transform_1d, filters = self.iwt_filter) 
 
 
     def forward(self, input_seqs, masked_pos=None):
@@ -351,44 +386,83 @@ class LIMUBertModel4Pretrain(nn.Module):
         device = input_seqs.device  # 获取输入张量所在的设备
         input_seqs = input_seqs.to(device)  # 确保输入张量在正确的设备上
 
+        #####小波变换##########################################33
         # print("input_seqs shape:", input_seqs.shape)
-
-
         # input_seqs = w_transform(input_seqs, wavelet='db1') # [1024, 15, 12]
-
         # print("input_seqs shape after w_transform:", input_seqs.shape)
-
         # h_masked = self.wavelet_transformer(input_seqs)
+        input_seqs = input_seqs.permute(0, 2, 1)
+        input_seqs = self.wt_function(input_seqs) #shape: b, c, 2, w // 2 [1024, 6, 2, 15]
+        # x shape: [1024, 6, 2, 15]
+        #reshape x to [1024, 12, 15]
+        input_seqs = input_seqs.view(input_seqs.size(0), input_seqs.size(1) * 2, input_seqs.size(3))
+        # reshape: [1024, 15, 12]  for transformer
+        input_seqs = input_seqs.permute(0, 2, 1)
+        #############################################################################3
 
         h_masked = self.transformer(input_seqs)
 
-        # h_masked = self.wt_inter_transformer(input_seqs) 
-
-        # h_masked = self.W_Transform_without_inverseW(input_seqs)   
-                
-        # print("Transformer output h shape:", h_masked.shape)
+        # h_masked = self.wt_inter_transformer(input_seqs) #[1024, 15, 72]
+        #h_masked = self.W_Transform_without_inverseW(input_seqs)           
+        # print("after transformer h_masked shape:", h_masked.shape)
+        # print("Shape of h_masked:", h_masked.shape)
+        # print("masked_pos shape:", masked_pos.shape)
+        # print("masked_pos:", masked_pos)
+        # print("Max index in masked_pos:", masked_pos.max().item())
 
         if self.output_embed:
             return h_masked
+        
         if masked_pos is not None:
-            # print("masked_pos shape:", masked_pos.shape)
+            print("masked_pos shape:", masked_pos.shape)
+            # 检查 masked_pos 的最大值是否在 h_masked 的长度范围内
+            # print("Max index in masked_pos:", masked_pos.max().item())
+            batch_size, seq_len, feature_dim = h_masked.size()
+            # num_masked = 2
+            # masked_pos = torch.stack([torch.randperm(seq_len)[:num_masked] for _ in range(batch_size)]).to(input_seqs.device)
+            # print("new masked_pos shape:", masked_pos.shape)
+           
+            # assert masked_pos.max().item() < h_masked.size(1), "Index out of bounds in masked_pos"
+            #  # 如果 masked_pos 的值超出范围，可以选择将其裁剪到合法范围内
+            # masked_pos = torch.clamp(masked_pos, max=h_masked.size(1) - 1)
+           # 在使用 masked_pos 之前，确保其索引不会超过序列长度
+            # if masked_pos.max().item() >= h_masked.size(1):
+            #     masked_pos = torch.clamp(masked_pos, max=h_masked.size(1) - 1)
+            # print("adjust max index masked_pos :", masked_pos.max().item())
+            # print("masked_pos:", masked_pos)
             masked_pos = masked_pos[:, :, None].expand(-1, -1, h_masked.size(-1))
+            print("masked_pos shape:", masked_pos.shape)
+            # print("masked_pos:", masked_pos)
+            print("Max index in masked_pos:", masked_pos.max().item())
             h_masked = torch.gather(h_masked, 1, masked_pos)
 
-        
+        # print("masked_pos shape:", masked_pos.shape)  #打印掩码
+        # print("masked_pos:", masked_pos)
+        # print("Max index in masked_pos:", masked_pos.max().item())    
         # print("before linear h_masked shape:", h_masked.shape)
-
         h_masked = self.activ(self.linear(h_masked))
-        # print("after linear h_masked shape:", h_masked.shape)
-        
+        # print("after linear h_masked shape:", h_masked.shape) #最后一维是36    
+        # h_masked = self.norm_wt(h_masked)
         h_masked = self.norm(h_masked)
         # print("after norm h_masked shape:", h_masked.shape)
-
         logits_lm = self.decoder(h_masked)
-
-        # print("logits_lm :", logits_lm)
         # print("logits_lm shape:", logits_lm.shape)
+
+
+
+        ##############################准备小波逆变换#####################################
+        batch_size, seq_length, feature_dim = logits_lm.shape # [1024, 15, 72]
+        num_channels = feature_dim // 2 # 72 // 2 = 36
+        logits_lm = logits_lm.permute(0, 2, 1) # [1024, 72, 15]
+        logits_lm = logits_lm.view(batch_size, num_channels, 2, seq_length) #[1024, 36, 2, 15]
+
+        # print("logits_lm shape before iwt:", logits_lm.shape)
+        #执行小波逆变换
+        logits_lm = self.iwt_function(logits_lm) # [1024, 36, 30]
+        # print("logits_lm shape after iwt:", logits_lm.shape)
+        logits_lm = logits_lm.permute(0, 2, 1)
+        #print("logits_lm :", logits_lm)
+        # print("logits_lm shape:", logits_lm.shape)    
+        ####################################3￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥
+
         return logits_lm
-    
-
-

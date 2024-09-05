@@ -11,47 +11,48 @@ from modwt import modwt, imodwt
 
 
 
-# def create_wavelet_filter(wave, in_size, out_size, type=torch.float):
-#     w = pywt.Wavelet(wave)
-#     dec_hi = torch.tensor(w.dec_hi[::-1], dtype=type)
-#     dec_lo = torch.tensor(w.dec_lo[::-1], dtype=type)
-
-
-#     dec_filters = torch.stack([dec_lo, dec_hi], dim=0)  # Shape: [2, filter_size]
-#     dec_filters = dec_filters.repeat(in_size, 1, 1)  # Shape: [in_size*2, filter_size]
-#     dec_filters = dec_filters.view(in_size * 2, 1, -1)  # Shape: [in_size*2, 1, filter_size]
-
-#     rec_hi = torch.tensor(w.rec_hi[::-1], dtype=type)
-#     rec_lo = torch.tensor(w.rec_lo[::-1], dtype=type)
-#     rec_filters = torch.stack([rec_lo, rec_hi], dim=0)
-#     rec_filters = rec_filters.repeat(out_size, 1, 1)  # Shape: [out_size*2, filter_size]
-#     rec_filters = rec_filters.view(out_size * 2, 1, -1)  # Shape: [out_size*2, 1, filter_size]
-#     print(f"Decomposition filter shape: {dec_filters.shape}")
-#     print(f"Reconstruction filter shape: {rec_filters.shape}")
-#     return dec_filters, rec_filters
 def create_wavelet_filter(wave, in_size, out_size, type=torch.float):
     w = pywt.Wavelet(wave)
     dec_hi = torch.tensor(w.dec_hi[::-1], dtype=type)
     dec_lo = torch.tensor(w.dec_lo[::-1], dtype=type)
 
-    # Decomposition filters
-    dec_filters = torch.stack([dec_lo, dec_hi], dim=0)  # Shape: [2, filter_size]
-    dec_filters = dec_filters.repeat(in_size, 1, 1)  # Repeat for each channel
-    dec_filters = dec_filters.view(in_size, 2, -1)  # Shape: [in_size, 2, filter_size]
-    dec_filters = dec_filters.permute(1, 0, 2).reshape(in_size * 2, 1, -1)  # Shape: [in_size*2, 1, filter_size]
 
-    # Reconstruction filters
+    dec_filters = torch.stack([dec_lo, dec_hi], dim=0)  # Shape: [2, filter_size]
+    dec_filters = dec_filters.repeat(in_size, 1, 1)  # Shape: [in_size*2, filter_size]
+    dec_filters = dec_filters.view(in_size * 2, 1, -1)  # Shape: [in_size*2, 1, filter_size]
+
     rec_hi = torch.tensor(w.rec_hi[::-1], dtype=type)
     rec_lo = torch.tensor(w.rec_lo[::-1], dtype=type)
-    rec_filters = torch.stack([rec_lo, rec_hi], dim=0)  # Shape: [2, filter_size]
-    rec_filters = rec_filters.repeat(out_size, 1, 1)  # Repeat for each channel
-    rec_filters = rec_filters.view(out_size, 2, -1)  # Shape: [out_size, 2, filter_size]
-    rec_filters = rec_filters.permute(1, 0, 2).reshape(out_size * 2, 1, -1)  # Shape: [out_size*2, 1, filter_size]
-
-    # print(f"Adjusted Decomposition filter shape: {dec_filters.shape}")
-    # print(f"Adjusted Reconstruction filter shape: {rec_filters.shape}")
-
+    rec_filters = torch.stack([rec_lo, rec_hi], dim=0)
+    rec_filters = rec_filters.repeat(out_size, 1, 1)  # Shape: [out_size*2, filter_size]
+    rec_filters = rec_filters.view(out_size * 2, 1, -1)  # Shape: [out_size*2, 1, filter_size]
+    print(f"Decomposition filter shape: {dec_filters.shape}")
+    print(f"Reconstruction filter shape: {rec_filters.shape}")
     return dec_filters, rec_filters
+
+# def create_wavelet_filter(wave, in_size, out_size, type=torch.float):
+#     w = pywt.Wavelet(wave)
+#     dec_hi = torch.tensor(w.dec_hi[::-1], dtype=type)
+#     dec_lo = torch.tensor(w.dec_lo[::-1], dtype=type)
+
+#     # Decomposition filters
+#     dec_filters = torch.stack([dec_lo, dec_hi], dim=0)  # Shape: [2, filter_size]
+#     dec_filters = dec_filters.repeat(in_size, 1, 1)  # Repeat for each channel
+#     dec_filters = dec_filters.view(in_size, 2, -1)  # Shape: [in_size, 2, filter_size]
+#     dec_filters = dec_filters.permute(1, 0, 2).reshape(in_size * 2, 1, -1)  # Shape: [in_size*2, 1, filter_size]
+
+#     # Reconstruction filters
+#     rec_hi = torch.tensor(w.rec_hi[::-1], dtype=type)
+#     rec_lo = torch.tensor(w.rec_lo[::-1], dtype=type)
+#     rec_filters = torch.stack([rec_lo, rec_hi], dim=0)  # Shape: [2, filter_size]
+#     rec_filters = rec_filters.repeat(out_size, 1, 1)  # Repeat for each channel
+#     rec_filters = rec_filters.view(out_size, 2, -1)  # Shape: [out_size, 2, filter_size]
+#     rec_filters = rec_filters.permute(1, 0, 2).reshape(out_size * 2, 1, -1)  # Shape: [out_size*2, 1, filter_size]
+
+#     # print(f"Adjusted Decomposition filter shape: {dec_filters.shape}")
+#     # print(f"Adjusted Reconstruction filter shape: {rec_filters.shape}")
+
+#     return dec_filters, rec_filters
 
 
 

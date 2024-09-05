@@ -57,10 +57,10 @@ model:
     imu_sequence_number: 30 #future IMU predict sequence number # This is not being used yet # 10 # 200 Hz, namely X /200 second
   hyper_params:
     starting_learning_rate: 0.001
-    denoise_loss_weights: 12
+    denoise_loss_weights: 10
     nsp_loss_weights: 1
     mlm_loss_weights: 1
-    continuity_loss_weight: 2
+    continuity_loss_weight: 1
 
     T_0: 5000
     T_mult: 10
@@ -68,7 +68,7 @@ model:
 
     nn_arch: 'limu_bert' # This is not used in the experiment. Just for reference
     # Below are copied from https://github.com/dapowan/LIMU-BERT-Public/blob/master/config/limu_bert.json#L4-L9
-    feature_num: 6
+    feature_num: 12
     hidden: 72
     # hidden: 72
     hidden_ff: 144

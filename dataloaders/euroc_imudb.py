@@ -62,6 +62,9 @@ class EUROCDataset(Dataset):
         future_imu_start_index = last_index - int(self.model_config['outputs']['imu_sequence_number'])
         input_imu_start_index = last_index - int(self.model_config['inputs']['imu_sequence_number'])
 
+
+
+
         #s为序列长度，6为数据维度
         input_imu = sequence_data['imu_data'][input_imu_start_index: last_index] # (S, 6)
         normed_input_imu = deepcopy(input_imu.detach().numpy())
@@ -75,6 +78,7 @@ class EUROCDataset(Dataset):
             mask_prob=float(self.data_config['mask']['mask_prob']),
             replace_prob=float(self.data_config['mask']['replace_prob'])
         )
+
 
         future_imu = sequence_data['imu_data'][future_imu_start_index: last_index]
         normed_future_imu = deepcopy(future_imu.detach().numpy())

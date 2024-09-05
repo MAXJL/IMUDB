@@ -21,40 +21,40 @@ class Model(pl.LightningModule):
         torch.cuda.empty_cache()
 
 
-    #要引入动态权重调整机制，我们可以在模型中实现一个自适应的权重更新策略，根据各个任务在验证集上的表现来调整它们的损失函数权重。
-    def adjust_task_weights(self, validation_performance):
-        # 根据验证集表现动态调整任务权重
-        base_weights = {
-            'MLM': self.hyper_params.mlm_loss_weights,
-            'denoise': self.hyper_params.denoise_loss_weights,
-            'NSP': self.hyper_params.nsp_loss_weights,
-            'continuity': self.hyper_params.continuity_loss_weight
-            }
-        performance_factor = 5.0
-        new_weights = {}
-        for task, performance in validation_performance.items():
-            base_weight = base_weights.get(task, 1)  # 默认为1，如果没有找到配置的权重
-            if performance is None :
-                print(f"Invalid performance value for {task}: {performance}")
-                adjustment = base_weight  # 使用基础权重
-            else:
-                performance = performance.cpu().numpy() if isinstance(performance, torch.Tensor) else performance
-                if np.isnan(performance) or np.isinf(performance):
-                    print(f"Invalid performance value for {task}: {performance}")
-                    adjustment = base_weight  # 使用基础权重
-                else:
-                    # adjustment = base_weight * (1 - (performance * performance_factor))
-                    # adjustment = base_weight * np.exp(-performance * performance_factor)
-                    # adjustment = base_weight * (1 - np.tanh(performance * performance_factor))
-                    adjustment = base_weight * (1 + np.tanh(performance * performance_factor) - 0.5)
-                    print(f"Task: {task}, Base Weight: {base_weight}, Performance: {performance}, Adjustment: {adjustment}")
-            # 特定任务权重调整不应用最大最小限制
-            if task == 'denoise':
-                new_weights[task + '_loss_weights'] = max(adjustment, 10)
-            else:
-                new_weights[task + '_loss_weights'] = max(min(adjustment, 3), 0.5)
-        print("New weights: ", new_weights)
-        self.hyper_params.update(new_weights)
+    # #要引入动态权重调整机制，我们可以在模型中实现一个自适应的权重更新策略，根据各个任务在验证集上的表现来调整它们的损失函数权重。
+    # def adjust_task_weights(self, validation_performance):
+    #     # 根据验证集表现动态调整任务权重
+    #     base_weights = {
+    #         'MLM': self.hyper_params.mlm_loss_weights,
+    #         'denoise': self.hyper_params.denoise_loss_weights,
+    #         'NSP': self.hyper_params.nsp_loss_weights,
+    #         'continuity': self.hyper_params.continuity_loss_weight
+    #         }
+    #     performance_factor = 2.0
+    #     new_weights = {}
+    #     for task, performance in validation_performance.items():
+    #         base_weight = base_weights.get(task, 1)  # 默认为1，如果没有找到配置的权重
+    #         if performance is None :
+    #             print(f"Invalid performance value for {task}: {performance}")
+    #             adjustment = base_weight  # 使用基础权重
+    #         else:
+    #             performance = performance.cpu().numpy() if isinstance(performance, torch.Tensor) else performance
+    #             if np.isnan(performance) or np.isinf(performance):
+    #                 print(f"Invalid performance value for {task}: {performance}")
+    #                 adjustment = base_weight  # 使用基础权重
+    #             else:
+    #                 # adjustment = base_weight * (1 - (performance * performance_factor))
+    #                 # adjustment = base_weight * np.exp(-performance * performance_factor)
+    #                 # adjustment = base_weight * (1 - np.tanh(performance * performance_factor))
+    #                 adjustment = base_weight * (1 + np.tanh(performance * performance_factor) - 0.5)
+    #                 print(f"Task: {task}, Base Weight: {base_weight}, Performance: {performance}, Adjustment: {adjustment}")
+    
+    #         if task == 'denoise':# 特定任务权重调整不应用最大最小限制
+    #             new_weights[task + '_loss_weights'] = max(min(adjustment,20), 10)
+    #         else:
+    #             new_weights[task + '_loss_weights'] = max(min(adjustment, 3), 0.5)
+    #     print("New weights: ", new_weights)
+    #     self.hyper_params.update(new_weights)
 
 
     def training_step(self, batch, batch_idx):
@@ -66,14 +66,23 @@ class Model(pl.LightningModule):
 
         """
         mask_seqs = batch['inputs']['mask_seqs'] # (B, seq, 6)
+
         masked_pos = batch['inputs']['masked_pos'] # (B, seq * mask_ratio)
+
         gt_masked_seq = batch['outputs']['gt_masked_seq']  # (B, seq * mask_ratio, 6)
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
         # MLM task
-        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
-        MLM_loss = self.mse_loss(gt_masked_seq, hat_imu_MLM) * float(
+        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
+        print("mask_seqs.size(): ", mask_seqs.size())
+        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
+        # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
+        gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
+        selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
+
+      
+        MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
             self.hyper_params.mlm_loss_weights)
 
         # Denoise task
@@ -83,6 +92,7 @@ class Model(pl.LightningModule):
 
         # NSP task
         hat_imu_future = self.limu_bert_nsp.forward(normed_input_imu)
+
         hat_imu_future_denoised = self.limu_bert_nsp.forward(hat_imu_denoise)
         NSP_loss = (self.mse_loss(normed_future_imu, hat_imu_future)
                     + self.mse_loss(hat_imu_future_denoised, hat_imu_future)
@@ -93,7 +103,8 @@ class Model(pl.LightningModule):
         continuity_loss = self.mse_loss(normed_input_imu[:, :-1, :], normed_input_imu[:, 1:, :]) * float(
             self.hyper_params.continuity_loss_weight)
 
-        loss = MLM_loss + denoise_loss + NSP_loss+continuity_loss
+        loss = MLM_loss + denoise_loss + NSP_loss
+        # loss = MLM_loss + denoise_loss + NSP_loss+continuity_loss
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -117,9 +128,37 @@ class Model(pl.LightningModule):
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
+
+
+        ##########修改#######
+        #打印mask_seqs的shape
+        # print("mask_seqs.size(): ", mask_seqs.size())
+        # #打印masked_pos的shape
+        # print("masked_pos.size(): ", masked_pos.size())
+        # #打印gt_masked_seq的shape
+        # print("gt_masked_seq.size(): ", gt_masked_seq.size())
+        # #打印normed_input_imu的shape
+        # print("normed_input_imu.size(): ", normed_input_imu.size())
+        # #打印normed_future_imu的shape
+        # print("normed_future_imu.size(): ", normed_future_imu.size())
+
+
+        # new_seq_length = 15
+        # masked_pos = torch.clamp(masked_pos, max=new_seq_length - 1)
+        # gt_masked_seq = torch.clamp(gt_masked_seq, max=new_seq_length - 1)
+        #################################
+
         # MLM task
-        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
-        MLM_loss = self.mse_loss(gt_masked_seq, hat_imu_MLM) * float(
+        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
+        print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
+            # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
+        gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
+        selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
+        print("After masked hat_imu_MLM.size(): ", selected_hat_imu_MLM.size())
+        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
+        # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
+        # print("gt_masked_seq.size(): ", gt_masked_seq.size())
+        MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
             self.hyper_params.mlm_loss_weights)
 
         # Denoise task
@@ -135,12 +174,13 @@ class Model(pl.LightningModule):
                     ) * float(
             self.hyper_params.nsp_loss_weights)
         
+
         continuity_loss = self.mse_loss(normed_input_imu[:, :-1, :], normed_input_imu[:, 1:, :]) * float(
             self.hyper_params.continuity_loss_weight) 
-        # 引入时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
-        # ，而且保持相邻数据点之间的连续性和逻辑一致性。这样的改进有助于去噪模型在处理高动态场景下的IMU数据时，更加稳定和准确。
-        loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
-
+        # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
+        # ，而且保持相邻数据点之间的连续性
+        # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
+        loss = MLM_loss + denoise_loss + NSP_loss 
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -150,67 +190,26 @@ class Model(pl.LightningModule):
 
         return {"loss": loss}
 
-    # def validation_epoch_end(self, validation_step_outputs):
-    #     # 结束一轮验证后，根据各任务损失调整权重
-    #     validation_performance = {
-    #         'MLM': np.mean([x.get('val_MLM_loss') for x in validation_step_outputs if x.get('val_MLM_loss') is not None]),
-    #         'denoise': np.mean([x.get('val_denoise_loss') for x in validation_step_outputs if x.get('val_denoise_loss') is not None]),
-    #         'NSP': np.mean([x.get('val_NSP_loss') for x in validation_step_outputs if x.get('val_NSP_loss') is not None]),
-    #         'continuity': np.mean([x.get('val_continuity_loss') for x in validation_step_outputs if x.get('val_continuity_loss') is not None])
-    #     }
-    #     #打印验证集表现
-    #     print("Validation performance: ", validation_performance)
-    #     self.adjust_task_weights(validation_performance)
+   
 
     # def validation_epoch_end(self, validation_step_outputs):
-        
-    #     MLM_losses = []
-    #     denoise_losses = []
-    #     NSP_losses = []
-    #     continue_losses = []
 
-    #     for output in validation_step_outputs:
-    #         if 'val_MLM_loss' in output:
-    #             MLM_losses.append(output['val_MLM_loss'])
-    #         if 'val_denoise_loss' in output:
-    #             denoise_losses.append(output['val_denoise_loss'])
-    #         if 'val_NSP_loss' in output:
-    #             NSP_losses.append(output['val_NSP_loss'])
-    #         if 'val_continuity_loss' in output:
-    #             continue_losses.append(output['val_continuity_loss'])
+    #     # print("validation_step_outputs: ", validation_step_outputs)
 
-    #     MLM_mean = np.mean(MLM_losses) if MLM_losses else 0
-    #     denoise_mean = np.mean(denoise_losses) if denoise_losses else 0
-    #     NSP_mean = np.mean(NSP_losses) if NSP_losses else 0
-    #     continue_mean = np.mean(continue_losses) if continue_losses else 0
+    #     avg_MLM_loss = self.trainer.callback_metrics['val_MLM_loss']
+    #     avg_denoise_loss = self.trainer.callback_metrics['val_denoise_loss']
+    #     avg_NSP_loss = self.trainer.callback_metrics['val_NSP_loss']
+    #     avg_continuity_loss = self.trainer.callback_metrics['val_continuity_loss']
+
 
     #     validation_performance = {
-    #         'MLM': MLM_mean,
-    #         'denoise': denoise_mean,
-    #         'NSP': NSP_mean,
-    #         'continuity': continue_mean
+    #         'MLM': avg_MLM_loss,
+    #         'denoise': avg_denoise_loss,
+    #         'NSP': avg_NSP_loss,
+    #         'continuity': avg_continuity_loss
     #     }
     #     print("Validation performance: ", validation_performance)
     #     self.adjust_task_weights(validation_performance)
-
-    def validation_epoch_end(self, validation_step_outputs):
-
-        # print("validation_step_outputs: ", validation_step_outputs)
-
-        avg_MLM_loss = self.trainer.callback_metrics['val_MLM_loss']
-        avg_denoise_loss = self.trainer.callback_metrics['val_denoise_loss']
-        avg_NSP_loss = self.trainer.callback_metrics['val_NSP_loss']
-        avg_continuity_loss = self.trainer.callback_metrics['val_continuity_loss']
-
-
-        validation_performance = {
-            'MLM': avg_MLM_loss,
-            'denoise': avg_denoise_loss,
-            'NSP': avg_NSP_loss,
-            'continuity': avg_continuity_loss
-        }
-        print("Validation performance: ", validation_performance)
-        self.adjust_task_weights(validation_performance)
 
 
 
