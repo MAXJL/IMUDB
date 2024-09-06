@@ -75,7 +75,7 @@ class Model(pl.LightningModule):
 
         # MLM task
         # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
-        print("mask_seqs.size(): ", mask_seqs.size())
+        # print("mask_seqs.size(): ", mask_seqs.size())
         hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
         # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
         gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
@@ -100,11 +100,13 @@ class Model(pl.LightningModule):
             self.hyper_params.nsp_loss_weights)
 
 
-        continuity_loss = self.mse_loss(normed_input_imu[:, :-1, :], normed_input_imu[:, 1:, :]) * float(
+        continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(
+            self.hyper_params.continuity_loss_weight) 
+        continuity_loss_future_denoised = self.mse_loss(hat_imu_future_denoised[:, :-1, :], hat_imu_future_denoised[:, 1:, :]) * float(
             self.hyper_params.continuity_loss_weight)
+        continuity_loss = continuity_loss_future + continuity_loss_future_denoised
 
-        loss = MLM_loss + denoise_loss + NSP_loss
-        # loss = MLM_loss + denoise_loss + NSP_loss+continuity_loss
+        loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -150,11 +152,11 @@ class Model(pl.LightningModule):
 
         # MLM task
         hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
-        print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
+        # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
             # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
         gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
         selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
-        print("After masked hat_imu_MLM.size(): ", selected_hat_imu_MLM.size())
+        # print("After masked hat_imu_MLM.size(): ", selected_hat_imu_MLM.size())
         # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
         # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
         # print("gt_masked_seq.size(): ", gt_masked_seq.size())
@@ -175,12 +177,15 @@ class Model(pl.LightningModule):
             self.hyper_params.nsp_loss_weights)
         
 
-        continuity_loss = self.mse_loss(normed_input_imu[:, :-1, :], normed_input_imu[:, 1:, :]) * float(
+        continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(
             self.hyper_params.continuity_loss_weight) 
+        continuity_loss_future_denoised = self.mse_loss(hat_imu_future_denoised[:, :-1, :], hat_imu_future_denoised[:, 1:, :]) * float(
+            self.hyper_params.continuity_loss_weight)
+        continuity_loss = continuity_loss_future + continuity_loss_future_denoised
         # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
         # ，而且保持相邻数据点之间的连续性
         # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
-        loss = MLM_loss + denoise_loss + NSP_loss 
+        loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)

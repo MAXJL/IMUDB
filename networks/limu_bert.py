@@ -60,19 +60,24 @@ class LayerNorm(nn.Module):
         x = (x - u) / torch.sqrt(s + self.variance_epsilon)
         return self.gamma * x + self.beta
 
-class LayerNorm2(nn.Module):
-    "A layernorm module in the TF style (epsilon inside the square root)."
-    def __init__(self, cfg, variance_epsilon=1e-12):
+class ContextAwareLayerNorm(nn.Module):
+    """ Layer normalization that adapts to the input context. """
+    def __init__(self, cfg):
         super().__init__()
-        self.gamma = nn.Parameter(torch.ones(36), requires_grad=True)
-        self.beta = nn.Parameter(torch.zeros(36), requires_grad=True)
-        self.variance_epsilon = variance_epsilon
+        self.gamma = nn.Parameter(torch.ones(cfg.hidden), requires_grad=True)
+        self.beta = nn.Parameter(torch.zeros(cfg.hidden), requires_grad=True)
+        self.variance_epsilon = 1e-12
 
     def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
-        return self.gamma * x + self.beta
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
+        context_scale = torch.sigmoid(self.gamma * std + self.beta)  # Context-aware scaling
+        return (x - mean) / (std + self.variance_epsilon) * context_scale
+
+
+
+
+
 # 这个嵌入层的主要作用是将输入的特征向量转换为适合模型处理的嵌入表示，并添加位置信息以保留序列的顺序信息。具体来说，它通过以下步骤实现这一目标：
 # 1线性变换：首先，通过线性层 self.lin 将输入特征向量 x 映射到隐藏层维度。这一步将原始特征转换为模型可以处理的嵌入表示。
 # 2位置嵌入：为了保留序列中每个元素的位置信息，嵌入层使用位置嵌入 self.pos_embed。如果没有传入位置嵌入，则创建一个新的位置嵌入层。位置嵌入的大小为序列长度 cfg.seq_len 和隐藏层维度 cfg.hidden。
@@ -179,6 +184,30 @@ class PositionWiseFeedForward(nn.Module):
         return self.fc2(gelu(self.fc1(x)))
 
 
+
+
+class DynamicWeights(nn.Module): #动态权重 用于动态调整注意力头的权重 
+    """ A module to dynamically adjust the weights of attention heads. """
+    # 下面是用法示例：
+    # self.attn = MultiHeadedSelfAttention(cfg)
+    # self.adaptive_merge = AdaptiveMerge(cfg)  # Add adaptive merge
+    # self.proj = nn.Linear(cfg.hidden, cfg.hidden)
+    # h = self.attn(h)
+    # h = self.adaptive_merge(h)
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.head_weights = nn.Parameter(torch.ones(cfg.n_heads), requires_grad=True)
+
+    def forward(self, attn_outputs):
+        # attn_outputs should have shape [batch_size, num_heads, seq_length, hidden_dim]
+        # Applying dynamic weights to the outputs of each head
+        weighted_outputs = attn_outputs * self.head_weights.view(1, -1, 1, 1)
+        return weighted_outputs.sum(dim=1)  # Combine heads
+
+
+
+
 class Transformer(nn.Module):
     """ Transformer with Self-Attentive Blocks"""
     def __init__(self, cfg):
@@ -198,6 +227,7 @@ class Transformer(nn.Module):
     def forward(self, x):
         # print(x.shape
         h = self.embed(x)
+    
         # print("Embedding output h shape:", h.shape)
         for _ in range(self.n_layers):
             # h = block(h, mask)
@@ -447,8 +477,6 @@ class LIMUBertModel4Pretrain(nn.Module):
         # print("after norm h_masked shape:", h_masked.shape)
         logits_lm = self.decoder(h_masked)
         # print("logits_lm shape:", logits_lm.shape)
-
-
 
         ##############################准备小波逆变换#####################################
         batch_size, seq_length, feature_dim = logits_lm.shape # [1024, 15, 72]
