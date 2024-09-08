@@ -15,47 +15,17 @@ def create_wavelet_filter(wave, in_size, out_size, type=torch.float):
     w = pywt.Wavelet(wave)
     dec_hi = torch.tensor(w.dec_hi[::-1], dtype=type)
     dec_lo = torch.tensor(w.dec_lo[::-1], dtype=type)
-
-
     dec_filters = torch.stack([dec_lo, dec_hi], dim=0)  # Shape: [2, filter_size]
     dec_filters = dec_filters.repeat(in_size, 1, 1)  # Shape: [in_size*2, filter_size]
     dec_filters = dec_filters.view(in_size * 2, 1, -1)  # Shape: [in_size*2, 1, filter_size]
-
     rec_hi = torch.tensor(w.rec_hi[::-1], dtype=type)
     rec_lo = torch.tensor(w.rec_lo[::-1], dtype=type)
     rec_filters = torch.stack([rec_lo, rec_hi], dim=0)
     rec_filters = rec_filters.repeat(out_size, 1, 1)  # Shape: [out_size*2, filter_size]
     rec_filters = rec_filters.view(out_size * 2, 1, -1)  # Shape: [out_size*2, 1, filter_size]
-    print(f"Decomposition filter shape: {dec_filters.shape}")
-    print(f"Reconstruction filter shape: {rec_filters.shape}")
+    # print(f"Decomposition filter shape: {dec_filters.shape}")
+    # print(f"Reconstruction filter shape: {rec_filters.shape}")
     return dec_filters, rec_filters
-
-# def create_wavelet_filter(wave, in_size, out_size, type=torch.float):
-#     w = pywt.Wavelet(wave)
-#     dec_hi = torch.tensor(w.dec_hi[::-1], dtype=type)
-#     dec_lo = torch.tensor(w.dec_lo[::-1], dtype=type)
-
-#     # Decomposition filters
-#     dec_filters = torch.stack([dec_lo, dec_hi], dim=0)  # Shape: [2, filter_size]
-#     dec_filters = dec_filters.repeat(in_size, 1, 1)  # Repeat for each channel
-#     dec_filters = dec_filters.view(in_size, 2, -1)  # Shape: [in_size, 2, filter_size]
-#     dec_filters = dec_filters.permute(1, 0, 2).reshape(in_size * 2, 1, -1)  # Shape: [in_size*2, 1, filter_size]
-
-#     # Reconstruction filters
-#     rec_hi = torch.tensor(w.rec_hi[::-1], dtype=type)
-#     rec_lo = torch.tensor(w.rec_lo[::-1], dtype=type)
-#     rec_filters = torch.stack([rec_lo, rec_hi], dim=0)  # Shape: [2, filter_size]
-#     rec_filters = rec_filters.repeat(out_size, 1, 1)  # Repeat for each channel
-#     rec_filters = rec_filters.view(out_size, 2, -1)  # Shape: [out_size, 2, filter_size]
-#     rec_filters = rec_filters.permute(1, 0, 2).reshape(out_size * 2, 1, -1)  # Shape: [out_size*2, 1, filter_size]
-
-#     # print(f"Adjusted Decomposition filter shape: {dec_filters.shape}")
-#     # print(f"Adjusted Reconstruction filter shape: {rec_filters.shape}")
-
-#     return dec_filters, rec_filters
-
-
-
 
 def wavelet_transform_1d(x, filters):
     device = x.device
@@ -72,12 +42,69 @@ def inverse_wavelet_transform_1d(x, filters):
     filters = filters.to(device)
     b, c, _, w_half = x.shape
     pad = (filters.shape[2] // 2 - 1)
-    x = x.reshape(b, c * 2, w_half)
 
+    x = x.reshape(b, c * 2, w_half)
     # filters = filters.repeat(c // filters.shape[0], 1, 1)
     filters = filters.repeat(c // (filters.shape[0] // 2), 1, 1)
     x = F.conv_transpose1d(x, filters, stride=2, groups=c, padding=pad)
+
+    # 重新排列时间步，每两个元素交换位置
+    # 创建一个索引映射
+    indices = torch.arange(x.shape[-1])
+    # 适用于偶数长度的序列
+    indices = indices.view(-1, 2).flip(dims=[1]).reshape(-1)
+    x = x.index_select(2, indices.to(device))
+
     return x
+
+
+
+
+##########################################
+
+# def create_wavelet_filter_1d(wave, in_channels, type=torch.float):
+#     w = pywt.Wavelet(wave)
+#     dec_hi = torch.tensor(w.dec_hi[::-1], dtype=type)
+#     dec_lo = torch.tensor(w.dec_lo[::-1], dtype=type)
+#     # 创建一维小波核
+#     dec_filters = torch.stack([dec_lo, dec_hi], dim=0).view(2, 1, -1).repeat(in_channels, 1, 1)
+#     rec_hi = torch.tensor(w.rec_hi[::-1], dtype=type)
+#     rec_lo = torch.tensor(w.rec_lo[::-1], dtype=type)
+#     # 创建一维逆小波核
+#     rec_filters = torch.stack([rec_lo, rec_hi], dim=0).view(2, 1, -1).repeat(in_channels, 1, 1)
+#     return dec_filters, rec_filters
+# def wavelet_transform_1d(data, filters):
+#     """
+#     一维小波变换
+#     """
+#     device = data.device
+#     filters = filters.to(device)
+#     # 这里stride=2用于下采样，只沿着序列长度操作
+#     transformed_data = F.conv1d(data, filters, stride=2, padding=filters.shape[-1]//2 - 1, groups=data.shape[1])
+#     b, c, s = transformed_data.shape
+#     transformed_data = transformed_data.view(b, c//2, 2, s).permute(0, 1, 3, 2).reshape(b, c//2 * 2, s)
+#     return transformed_data
+
+# def inverse_wavelet_transform_1d(transformed_data, filters):
+#     device = transformed_data.device
+#     filters = filters.to(device)
+#     b, c, s = transformed_data.shape
+#     transformed_data = transformed_data.view(b, c//2, 2, s).permute(0, 1, 3, 2).reshape(b, c, s)
+#     original_data = F.conv_transpose1d(transformed_data, filters, stride=2, padding=filters.shape[-1]//2 - 1, groups=transformed_data.shape[1]//2)
+#     return original_data
+
+
+###########################################################################
+
+
+
+
+
+
+
+
+
+
 
 
 def w_transform(x, wavelet='db1', level=1, mode='symmetric'):
@@ -130,11 +157,6 @@ def inverse_wavelet_transform(combined_freq_data, wavelet='db1'):
             reconstructed_data[i, :, j] = pywt.idwt(low_freq[i, :], high_freq[i, :], wavelet)
     
     return torch.tensor(reconstructed_data)
-
-
-
-
-
 
 
 class SEBlock(nn.Module):
@@ -433,52 +455,358 @@ class W_Transform(nn.Module):
         
         return concat_freq_components
 
+
+
+##############自定义的，出现了变量梯度计算的问题################################
+
+def wavelet_transform(data, wavelet='haar'):
+    """
+    对三维Tensor数据执行一级小波变换，并合并低频和高频信息。
+    
+    参数:
+    data - 输入数据，形状为 [batch_size, sequence_length, num_features]
+    wavelet - 使用的小波类型，默认为 'haar'
+    
+    返回:
+    transformed_data - 变换后的数据，形状为 [batch_size, sequence_length//2, num_features*2]
+    """
+    # 转换为numpy数组进行小波变换
+    device = data.device
+    # 计算变换后的维度
+    num_samples, sequence_length, num_features = data.shape
+    transformed_data = torch.zeros((num_samples, sequence_length // 2, num_features * 2), device=device)
+    
+    # dwt = ptwt.DWT1D(wavelet=wavelet, wave='db1')  # 初始化DWT变换器
+    
+    # 对每个batch和每个特征进行小波变换
+    for i in range(num_samples):  # 遍历每个batch
+        for j in range(num_features):  # 遍历每个特征维度
+            cA, cD = pywt.dwt(data[i, :, j].unsqueeze(0).unsqueeze(0), wavelet)  # 进行一级DWT
+            # 将近似系数和细节系数合并在一起
+            transformed_data[i, :, 2*j:2*j+2] = torch.cat((cA.squeeze(), cD.squeeze()), dim=1)
+    
+    return transformed_data
+
+def wavelet_inverse_transform(transformed_data, wavelet='haar'):
+    """
+    对变换后的数据执行逆小波变换。
+    
+    参数:
+    transformed_data - 变换后的数据，形状为 [batch_size, sequence_length//2, num_features*2]
+    wavelet - 使用的小波类型，默认为 'haar'
+    
+    返回:
+    original_data - 逆变换恢复后的原始数据，形状为 [batch_size, sequence_length, num_features]
+    """
+    # 转换为numpy数组进行逆小波变换
+    device = transformed_data.device
+    num_samples, half_sequence_length, double_features = transformed_data.shape
+    num_features = double_features // 2
+    original_data = torch.zeros((num_samples, half_sequence_length * 2, num_features), device=device)
+    
+    # 对每个batch和每个特征进行逆小波变换
+    for i in range(num_samples):
+        for j in range(num_features):
+            # 提取近似系数和细节系数
+            cA = transformed_data[i, :, 2*j].unsqueeze(0).unsqueeze(0)
+            cD = transformed_data[i, :, 2*j+1].unsqueeze(0).unsqueeze(0)
+            # 执行逆DWT
+            original_data[i, :, j] = pywt.idwt(cA, cD, wavelet).squeeze()
+    
+    # 转换回Tensor
+    return original_data
+
+############################################################################
+
+ 
+
+
+# 定义 modwt 函数，支持批处理输入
+def modwt(x, filters, level):
+    '''
+    x: 输入数据，形状为 (batch_size, time_steps, features)
+    filters: 'db1', 'db2', 'haar', ...
+    level: 分解级别
+    return: 分解后的系数，形状为 (batch_size, time_steps, features * (level + 1))
+    '''
+    device = x.device
+    batch_size, time_steps, features = x.shape
+    wavelet = pywt.Wavelet(filters)
+    # h = wavelet.dec_hi
+    # g = wavelet.dec_lo
+    # h_t = np.array(h) / np.sqrt(2)
+    # g_t = np.array(g) / np.sqrt(2)
+    h = torch.tensor(wavelet.dec_hi[::-1], dtype=torch.float32, device=device) / torch.sqrt(torch.tensor(2.0,device=device))
+    g = torch.tensor(wavelet.dec_lo[::-1], dtype=torch.float32, device=device) / torch.sqrt(torch.tensor(2.0,device=device))
+    wavecoeff = []
+    v_j_1 = x.to(device)
+    for j in range(level):
+        w = circular_convolve_d(h, v_j_1, j + 1)
+        v_j_1 = circular_convolve_d(g, v_j_1, j + 1)
+        wavecoeff.append(w)
+    wavecoeff.append(v_j_1)
+    wavecoeff = torch.stack(wavecoeff, dim=-1)  # 将级数维度放到最后
+    wavecoeff = wavecoeff.reshape(batch_size, time_steps, -1)  # 合并级数维度到特征维度
+    return wavecoeff
+
+
+# 定义 imodwt 函数，支持批处理输入
+def imodwt(w, filters, level):
+    '''
+    w: 分解后的系数，形状为 (batch_size, time_steps, features * (level + 1))
+    filters: 'db1', 'db2', 'haar', ...
+    level: 分解级别
+    return: 重构后的信号，形状为 (batch_size, time_steps, features)
+    '''
+    device = w.device
+    batch_size, time_steps, features = w.shape
+    features = features // (level + 1)  # 恢复原始特征数
+    # w = w.reshape(batch_size, time_steps, features, level + 1).transpose(0, 3, 1, 2)  # 重新调整维度
+    w = w.view(batch_size, time_steps, features, level + 1).permute(0, 3, 1, 2)  # 重新调整维度
+    wavelet = pywt.Wavelet(filters)
+    # h = wavelet.dec_hi
+    # g = wavelet.dec_lo
+    # h_t = np.array(h) / np.sqrt(2)
+    # g_t = np.array(g) / np.sqrt(2)
+    h = torch.tensor(wavelet.dec_hi[::-1], dtype=torch.float32,device=device) / torch.sqrt(torch.tensor(2.0,device=device))
+    g = torch.tensor(wavelet.dec_lo[::-1], dtype=torch.float32,device=device) / torch.sqrt(torch.tensor(2.0,device=device))
+    v_j = w[:, -1, :, :]  # 初始化为最后一级的逼近系数
+    for jp in range(level):
+        j = level - jp - 1
+        v_j = circular_convolve_s(h, g, w[:, j, :, :], v_j, j + 1)
+    return v_j
+# 定义辅助函数 circular_convolve_d，支持批处理输入
+def circular_convolve_d(h_t, v_j_1, j):
+    '''
+    jth level decomposition
+    h_t: \tilde{h} = h / sqrt(2)
+    v_j_1: v_{j-1}, the (j-1)th scale coefficients
+    return: w_j (or v_j)
+    '''
+    device = v_j_1.device
+    batch_size, N, features = v_j_1.shape
+    L = len(h_t)
+    # w_j = np.zeros_like(v_j_1)
+    # l = np.arange(L)
+    w_j = torch.zeros_like(v_j_1)
+    l = torch.arange(L, device=device)
+    for t in range(N):
+        # index = np.mod(t - 2 ** (j - 1) * l, N)
+        index = torch.remainder(t - 2 ** (j - 1) * l, N)
+        v_p = v_j_1[:, index, :]
+        # w_j[:, t, :] = (h_t[:, None] * v_p).sum(axis=1)
+        w_j[:, t, :] = torch.sum(h_t[None, :, None].to(device) * v_p, dim=1)
+    return w_j
+
+# 定义辅助函数 circular_convolve_s，支持批处理输入
+def circular_convolve_s(h_t, g_t, w_j, v_j, j):
+    '''
+    (j-1)th level synthesis from w_j, w_j
+    see function circular_convolve_d
+    '''
+    device = v_j.device
+    batch_size, N, features = v_j.shape
+    L = len(h_t)
+    # v_j_1 = np.zeros_like(v_j)
+    # l = np.arange(L)
+    v_j_1 = torch.zeros_like(v_j)
+    l = torch.arange(L,device=device)
+    for t in range(N):
+        # index = np.mod(t + 2 ** (j - 1) * l, N)
+        index = torch.remainder(t + 2 ** (j - 1) * l, N)
+        w_p = w_j[:, index, :]
+        v_p = v_j[:, index, :]
+        # v_j_1[:, t, :] = (h_t[:, None] * w_p).sum(axis=1) + (g_t[:, None] * v_p).sum(axis=1)
+        v_j_1[:, t, :] = torch.sum(h_t[None, :, None].to(device) * w_p, dim=1) + torch.sum(g_t[None, :, None].to(device) * v_p, dim=1)
+    return v_j_1
+
+
+
+
+
 if __name__ == '__main__':
-    # 定义输入的参数
-    batch_size = 1024  # Batch size
-    sequence_length = 30  # Sequence length (S)
-    feature_dim = 6  # Feature dimension (D)
+#     # 定义输入的参数
+#     batch_size = 1024  # Batch size
+#     sequence_length = 30  # Sequence length (S)
+#     feature_dim = 6  # Feature dimension (D)
 
-    # 随机生成输入数据，形状为 [B, S, D]
-    input_data = torch.randn(batch_size, sequence_length, feature_dim)
+#     # 随机生成输入数据，形状为 [B, S, D]
+#     input_data = torch.randn(batch_size, sequence_length, feature_dim)
 
-    # 定义WTConv1d的参数
-    in_channels = feature_dim
-    out_channels = feature_dim
-    kernel_size = 3
-    wt_levels = 2  # 小波分解的层数
-    dilation_rates=[2, 2, 2]
+#     # 定义WTConv1d的参数
+#     in_channels = feature_dim
+#     out_channels = feature_dim
+#     kernel_size = 3
+#     wt_levels = 2  # 小波分解的层数
+#     dilation_rates=[2, 2, 2]
 
 
-    # # 实例化 WTConv1d
-    # wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=3, wt_levels=2)
+#     # # 实例化 WTConv1d
+#     # wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=3, wt_levels=2)
 
-    # multi_wtconv1d_layer = MultiLayerWTConv1d(num_layers=3, in_channels=6, out_channels=6, kernel_size=3, wt_levels=2)
+#     # multi_wtconv1d_layer = MultiLayerWTConv1d(num_layers=3, in_channels=6, out_channels=6, kernel_size=3, wt_levels=2)
 
-    # #实例化IntegratedWTConv1d
+#     # #实例化IntegratedWTConv1d
 
-    # integrated_wtconv1d_layer = IntegratedWTConv1d(in_channels=6, out_channels=6, kernel_size=5, wt_levels=2, dilation_rates=dilation_rates)
+#     # integrated_wtconv1d_layer = IntegratedWTConv1d(in_channels=6, out_channels=6, kernel_size=5, wt_levels=2, dilation_rates=dilation_rates)
     
 
-    W_Transform_layer = W_Transform(wavelet='db1', level=1)
+#     W_Transform_layer = W_Transform(wavelet='db1', level=1)
 
 
-    # 前向传播，计算输出
-    #计算推理时间
-    import time
-    start = time.time()
-    # output_data = wtconv1d_layer(input_data)
-    # output_data = multi_wtconv1d_layer(input_data)
-    # output_data = integrated_wtconv1d_layer(input_data)
-    output_data = W_Transform_layer(input_data)
+#     # 前向传播，计算输出
+#     #计算推理时间
+#     import time
+#     start = time.time()
+#     # output_data = wtconv1d_layer(input_data)
+#     # output_data = multi_wtconv1d_layer(input_data)
+#     # output_data = integrated_wtconv1d_layer(input_data)
+#     output_data = W_Transform_layer(input_data)
 
-    data = inverse_wavelet_transform(output_data)
+#     data = inverse_wavelet_transform(output_data)
 
-    end = time.time()
-    print(f"Time: {end - start}")
+#     end = time.time()
+#     print(f"Time: {end - start}")
 
-    # 打印输出的形状
-    print(f"Input shape: {input_data.shape}")
-    print(f"Output shape: {output_data.shape}")
-    print(f"Data shape: {data.shape}")
+#     # 打印输出的形状
+#     print(f"Input shape: {input_data.shape}")
+#     print(f"Output shape: {output_data.shape}")
+#     print(f"Data shape: {data.shape}")
     
+
+
+
+    print(f"Start testing the wavelet transform and inverse transform functions")
+     # Initialize a sample tensor
+  # Define a simple dataset
+    # data = torch.tensor([[[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]]])
+    data = torch.rand(1, 6, 8)
+
+    # Define wavelet type and level
+    wavelet_type = 'db1'
+    in_channels = out_channels = 6
+
+    # Create filters
+    dec_filters, rec_filters = create_wavelet_filter(wavelet_type, in_channels, out_channels)
+
+    # Perform wavelet transform
+    wt_output = wavelet_transform_1d(data, dec_filters)
+
+    # Perform inverse wavelet transform
+    iwt_output = inverse_wavelet_transform_1d(wt_output, rec_filters)
+
+    # Print the results
+    # print("Original data:")
+    print("原始数据的维度", data.shape)
+    print("原始数据:")
+    print(data)
+    print("分解后的维度:", wt_output.shape)
+    # print("Inverse wavelet transform output (reconstructed data):")
+    # print("分解后的数据:", wt_output)
+    # print(iwt_output)
+    print("重构后的维度:", iwt_output.shape)
+    print("重构后的数据:")
+    print(iwt_output)
+
+    # 验证重构后的信号是否与原信号相同，添加阈值
+    atol = 1e-6  # 绝对误差阈值
+    rtol = 1e-5  # 相对误差阈值
+    print("重构是否与原信号相同:", np.allclose(data, iwt_output, atol=atol, rtol=rtol))
+
+
+
+        # Sample data creation
+    # batch_size = 1
+    # num_channels = 6
+    # sequence_length = 10  # Ensure sequence length is even for simplicity
+    # data = torch.randn(batch_size, num_channels, sequence_length)
+    # #torch创建一个维度是【1，6，10】的tensor,1是batch_size,6是通道数，10是序列长度
+    
+    # # Define wavelet type and create filters
+    # wavelet_type = 'db1'
+    # dec_filters, rec_filters = create_wavelet_filter_1d(wavelet_type, num_channels)
+
+    # print("Original data shape:", data.shape)
+    # print("Original data:", data)
+    # # Perform wavelet transform
+    # wt_output = wavelet_transform_1d(data, dec_filters)
+    # print("Wavelet transform output shape:", wt_output.shape)
+    # # Perform inverse wavelet transform
+    # iwt_output = inverse_wavelet_transform_1d(wt_output, rec_filters)
+    # print("Inverse wavelet transform output shape:", iwt_output.shape)
+    # print("Inverse wavelet transform output:", iwt_output)
+
+    # atol = 1e-6  # 绝对误差阈值
+    # rtol = 1e-5  # 相对误差阈值
+    # print("重构是否与原信号相同:", np.allclose(data, iwt_output, atol=atol, rtol=rtol))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # 示例验证 形状为 (1024, 30, 6) 的tensor数据
+    # x = torch.rand(1024, 30, 6)
+    # # x = np.random.rand(1024, 30, 6)  # 形状为 (1024, 30, 6) 的随机数组
+
+    
+    # # 小波滤波器
+    # filters = 'haar'
+
+    # # 分解级别
+    # level = 1
+
+    # # 调用 modwt 函数
+    # wavecoeff = modwt(x, filters, level)
+
+    # # 调用 imodwt 函数
+    # reconstructed_x = imodwt(wavecoeff, filters, level)
+
+    # # 输出维度
+    # print("输入维度:", x.shape)
+    # print("原始数据", x)
+    # # print("分解后的维度:", wavecoeff.shape)
+    # # print("分解后的数据", wavecoeff)
+    # print("重构后的维度:", reconstructed_x.shape)
+    # print("重构后的数据", reconstructed_x)
+
+    # # 验证重构后的信号是否与原信号相同，添加阈值
+    # atol = 1e-6  # 绝对误差阈值
+    # rtol = 1e-5  # 相对误差阈值
+    # print("重构是否与原信号相同:", np.allclose(x, reconstructed_x, atol=atol, rtol=rtol))
+
+
+    # # 创建一个模拟的Tensor数据，形状为[1024, 30, 6]
+    # data_tensor = torch.rand(1024, 30, 6)
+
+    # # wavelet = 'db1'
+    # # 执行小波变换
+    # transformed_tensor = wavelet_transform(data_tensor)
+
+    # # 使用定义的 wavelet_inverse_transform 函数进行逆变换
+    # reconstructed_tensor = wavelet_inverse_transform(transformed_tensor)
+
+    # # 验证原始数据和重构数据是否一致
+    # if torch.allclose(data_tensor, reconstructed_tensor, atol=1e-5):
+    #     print("检查结果：原始数据与重构数据相同。")
+    # else:
+    #     print("检查结果：原始数据与重构数据不相同。")
+
+    # print("原始Tensor形状:", data_tensor.shape)
+    # print("变换后的Tensor形状:", transformed_tensor.shape)
+    # print("重构后的Tensor形状:", reconstructed_tensor.shape)

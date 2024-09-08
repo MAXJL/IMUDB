@@ -107,6 +107,7 @@ class Model(pl.LightningModule):
         continuity_loss = continuity_loss_future + continuity_loss_future_denoised
 
         loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
+        # loss = MLM_loss + denoise_loss + NSP_loss 
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
@@ -184,8 +185,8 @@ class Model(pl.LightningModule):
         continuity_loss = continuity_loss_future + continuity_loss_future_denoised
         # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
         # ，而且保持相邻数据点之间的连续性
-        # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
         loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
+        # loss = MLM_loss + denoise_loss + NSP_loss 
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)

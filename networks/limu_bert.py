@@ -22,7 +22,11 @@ from wtconv1d import create_wavelet_filter
 from wtconv1d import w_transform
 from wtconv1d import inverse_wavelet_transform
 
-from common.mask import create_mask
+from wtconv1d import wavelet_transform
+from wtconv1d import wavelet_inverse_transform
+
+from wtconv1d import modwt
+from wtconv1d import imodwt
 
 # from mLSTM import mLSTM
 # from sLSTM import sLSTM
@@ -103,6 +107,10 @@ class Embeddings(nn.Module):
         self.emb_norm = cfg.emb_norm
 
     def forward(self, x):
+
+        if not isinstance(x, torch.Tensor):
+            raise TypeError("Expected input to be a torch.Tensor, but got {}".format(type(x)))
+       
         seq_len = x.size(1) #获取序列长度
         #创建一个表示位置的张量，大小为（B, S） B是batch_size，S是序列长度
         pos = torch.arange(seq_len, dtype=torch.long, device=x.device)
@@ -138,6 +146,9 @@ class MultiHeadedSelfAttention(nn.Module):
         self.proj_k = nn.Linear(cfg.hidden, cfg.hidden)
         self.proj_v = nn.Linear(cfg.hidden, cfg.hidden)
         self.scores = None # for visualization
+
+        self.dynamic_weights = DynamicWeights(cfg) 
+
         self.n_heads = cfg.n_heads
 
     def forward(self, x):
@@ -151,6 +162,10 @@ class MultiHeadedSelfAttention(nn.Module):
                    for x in [q, k, v])
         # (B, H, S, W) @ (B, H, W, S) -> (B, H, S, S) -softmax-> (B, H, S, S)
         scores = q @ k.transpose(-2, -1) / np.sqrt(k.size(-1))
+        
+        # print("MultiHeadedSelfAttention scores shape:", scores.shape)
+        scores = self.dynamic_weights(scores)  # Add dynamic weights
+
         scores = F.softmax(scores, dim=-1)
         # (B, H, S, S) @ (B, H, S, W) -> (B, H, S, W) -trans-> (B, S, H, W)
         h = (scores @ v).transpose(1, 2).contiguous()
@@ -188,22 +203,21 @@ class PositionWiseFeedForward(nn.Module):
 
 class DynamicWeights(nn.Module): #动态权重 用于动态调整注意力头的权重 
     """ A module to dynamically adjust the weights of attention heads. """
-    # 下面是用法示例：
-    # self.attn = MultiHeadedSelfAttention(cfg)
-    # self.adaptive_merge = AdaptiveMerge(cfg)  # Add adaptive merge
-    # self.proj = nn.Linear(cfg.hidden, cfg.hidden)
-    # h = self.attn(h)
-    # h = self.adaptive_merge(h)
 
     def __init__(self, cfg):
         super().__init__()
-        self.head_weights = nn.Parameter(torch.ones(cfg.n_heads), requires_grad=True)
+        self.scale_weights = nn.Parameter(torch.ones(cfg.n_heads), requires_grad=True)
 
-    def forward(self, attn_outputs):
+    def forward(self, attn_scores):
         # attn_outputs should have shape [batch_size, num_heads, seq_length, hidden_dim]
         # Applying dynamic weights to the outputs of each head
-        weighted_outputs = attn_outputs * self.head_weights.view(1, -1, 1, 1)
-        return weighted_outputs.sum(dim=1)  # Combine heads
+        scaled_scores = attn_scores * self.scale_weights.view(1, -1, 1, 1)
+
+        #查看动态权重
+        
+        print("DynamicWeights scale_weights:", self.scale_weights.data)
+
+        return scaled_scores  # Combine heads
 
 
 
@@ -219,10 +233,17 @@ class Transformer(nn.Module):
         # To used parameter-sharing strategies
         self.n_layers = cfg.n_layers
         self.attn = MultiHeadedSelfAttention(cfg)
+
         self.proj = nn.Linear(cfg.hidden, cfg.hidden)
-        self.norm1 = LayerNorm(cfg)
+
+        self.norm1 = ContextAwareLayerNorm(cfg)
+        # self.norm1 = LayerNorm(cfg)
+
         self.pwff = PositionWiseFeedForward(cfg)
-        self.norm2 = LayerNorm(cfg)
+
+        self.norm2 = ContextAwareLayerNorm(cfg)
+        # self.norm2 = LayerNorm(cfg)
+
         # self.drop = nn.Dropout(cfg.p_drop_hidden)
     def forward(self, x):
         # print(x.shape
@@ -234,6 +255,8 @@ class Transformer(nn.Module):
             #打印第几次循环
             # print("Transformer loop:", _)
             h = self.attn(h)
+            print("MultiHeadedSelfAttention h shape:", h.shape)
+
             h = self.norm1(h + self.proj(h))
             h = self.norm2(h + self.pwff(h))
         return h
@@ -392,8 +415,6 @@ class LIMUBertModel4Pretrain(nn.Module):
         self.activ = gelu
         self.norm = LayerNorm(cfg)
 
-        self.norm_wt = LayerNorm2(cfg)
-
         self.decoder = nn.Linear(cfg.hidden, cfg.feature_num)
         # self.decoder = nn.Linear(cfg.hidden // 2, 6)
 
@@ -429,8 +450,18 @@ class LIMUBertModel4Pretrain(nn.Module):
         # reshape: [1024, 15, 12]  for transformer
         input_seqs = input_seqs.permute(0, 2, 1)
         #############################################################################3
+        # print("input_seqs shape:", input_seqs.shape)
+        # input_seqs = wavelet_transform(input_seqs, wavelet='haar')     # [1024, 15, 12]
+        # print("h_masked shape after wavelet_transform:", input_seqs.shape)
+
+
+        # # print("input_seqs shape before modwt:", input_seqs.shape)
+        # input_seqs = modwt(input_seqs, filters='haar', level=1) 
+
+        # print("input_seqs shape after modwt:", input_seqs.shape)
 
         h_masked = self.transformer(input_seqs)
+
 
         # h_masked = self.wt_inter_transformer(input_seqs) #[1024, 15, 72]
         #h_masked = self.W_Transform_without_inverseW(input_seqs)           
@@ -479,11 +510,10 @@ class LIMUBertModel4Pretrain(nn.Module):
         # print("logits_lm shape:", logits_lm.shape)
 
         ##############################准备小波逆变换#####################################
-        batch_size, seq_length, feature_dim = logits_lm.shape # [1024, 15, 72]
-        num_channels = feature_dim // 2 # 72 // 2 = 36
-        logits_lm = logits_lm.permute(0, 2, 1) # [1024, 72, 15]
-        logits_lm = logits_lm.view(batch_size, num_channels, 2, seq_length) #[1024, 36, 2, 15]
-
+        batch_size, seq_length, feature_dim = logits_lm.shape 
+        num_channels = feature_dim // 2 
+        logits_lm = logits_lm.permute(0, 2, 1) # 
+        logits_lm = logits_lm.view(batch_size, num_channels, 2, seq_length) 
         # print("logits_lm shape before iwt:", logits_lm.shape)
         #执行小波逆变换
         logits_lm = self.iwt_function(logits_lm) # [1024, 36, 30]
@@ -492,5 +522,12 @@ class LIMUBertModel4Pretrain(nn.Module):
         #print("logits_lm :", logits_lm)
         # print("logits_lm shape:", logits_lm.shape)    
         ####################################3￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥￥
+
+        # print("before iwt logits_lm shape:", logits_lm.shape)
+        # logits_lm = wavelet_inverse_transform(logits_lm, wavelet='haar')
+        # print("after iwt logits_lm shape:", logits_lm.shape)
+        # print("before imodwt logits_lm shape:", logits_lm.shape)
+        # logits_lm = imodwt(logits_lm, filters='haar', level=1)
+        # print("after imodwt logits_lm shape:", logits_lm.shape)
 
         return logits_lm

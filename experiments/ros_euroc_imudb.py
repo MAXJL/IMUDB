@@ -72,7 +72,7 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
         backend = external_backend
     else:
         print("Initializing the ckpts_fp session ...")
-        model = Model.load_from_checkpoint(ckpts_fp)
+        model = Model.load_from_checkpoint(ckpts_fp, strict=False)
         backend = model.limu_bert_mlm.forward
         if get_model:
             return backend
