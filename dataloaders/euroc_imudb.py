@@ -61,6 +61,9 @@ class EUROCDataset(Dataset):
         # avoid the index go beyonds the limit for both imu and cam
         future_imu_start_index = last_index - int(self.model_config['outputs']['imu_sequence_number'])
         input_imu_start_index = last_index - int(self.model_config['inputs']['imu_sequence_number'])
+        # print("last index is: ", last_index)
+        # print("future imu start index is: ", future_imu_start_index)
+        # print("input imu start index is: ", input_imu_start_index)
 
 
 

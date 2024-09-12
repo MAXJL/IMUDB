@@ -31,6 +31,6 @@ def bag_to_csv(bag_file, output_csv):
     print(f"Saved data to {output_csv}")
 
 if __name__ == "__main__":
-    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/0908_new_wavelet_40input/MH_05_difficult.bag.new.imudb2.bag'  # 替换为您的bag文件路径
-    output_csv = '/home/jia/MA/IMUDB-main/EuRoC/bags/0908_new_wavelet_40input/MH05_new_wavelet-T_40input_data.csv'  # 替换为您希望保存的csv文件路径
+    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/0912_only_2_levelwavelet/V2_03_difficult.bag.new.imudb2.bag'  # 替换为您的bag文件路径
+    output_csv = '/home/jia/MA/IMUDB-main/EuRoC/bags/0912_only_2_levelwavelet/V203_2_level_wavelet_data.csv'  # 替换为您希望保存的csv文件路径
     bag_to_csv(bag_file, output_csv)

@@ -75,14 +75,6 @@ class Model(pl.LightningModule):
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
-        #检测normed_input_imu和normed_future_imu是不是一样的，不要直接打印，作差比较
-        # print("normed_input_imu.size(): ", normed_input_imu.size())
-        # print("normed_future_imu.size(): ", normed_future_imu.size())
-        # print("normed_input_imu - normed_future_imu: ", normed_input_imu - normed_future_imu)
-
-        #打印normed_future_imu的shape
-        # print("normed_future_imu.size(): ", normed_future_imu.size())
-
         # MLM task
         # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
         # print("mask_seqs.size(): ", mask_seqs.size())
@@ -110,19 +102,12 @@ class Model(pl.LightningModule):
             self.hyper_params.nsp_loss_weights)
 
 
-        # continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight) 
-        # continuity_loss_future_denoised = self.mse_loss(hat_imu_future_denoised[:, :-1, :], hat_imu_future_denoised[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight)
-        # continuity_loss = continuity_loss_future + continuity_loss_future_denoised
-
-
         # Continuity task
         # hat_imu_continuity = self.limu_bert_cl.forward(normed_input_imu)
         # continuity_loss = self.mse_loss(hat_imu_continuity[:, :-1, :], hat_imu_continuity[:, 1:, :]) * float(
         #     self.hyper_params.continuity_loss_weight) 
-
-
+       
+        # loss = MLM_loss + denoise_loss + NSP_loss
         # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
         loss = MLM_loss + denoise_loss + NSP_loss 
 
@@ -130,7 +115,7 @@ class Model(pl.LightningModule):
         self.log("train_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_denoise_loss", denoise_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_NSP_loss", NSP_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log("train_continuity_loss", continuity_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # self.log("train_continuity_loss", continuity_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
         return {"loss": loss}
 
@@ -195,19 +180,12 @@ class Model(pl.LightningModule):
             self.hyper_params.nsp_loss_weights)
         
 
-        # continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight) 
-        # continuity_loss_future_denoised = self.mse_loss(hat_imu_future_denoised[:, :-1, :], hat_imu_future_denoised[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight)
-        # continuity_loss = continuity_loss_future + continuity_loss_future_denoised
-        # # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
-        # # ，而且保持相邻数据点之间的连续性
-
         # hat_imu_continuity = self.limu_bert_cl.forward(normed_input_imu)
         # continuity_loss = self.mse_loss(hat_imu_continuity[:, :-1, :], hat_imu_continuity[:, 1:, :]) * float(
         #     self.hyper_params.continuity_loss_weight) 
         # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
-
+        # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
+        # ，而且保持相邻数据点之间的连续性
         loss = MLM_loss + denoise_loss + NSP_loss 
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
