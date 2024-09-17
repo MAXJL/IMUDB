@@ -591,7 +591,7 @@ if __name__ == '__main__':
 
 
     # # 实例化 WTConv1d
-    wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=3, wt_levels=2)
+    # wtconv1d_layer = WTConv1d(in_channels, out_channels, kernel_size=3, wt_levels=2)
 
 #     # multi_wtconv1d_layer = MultiLayerWTConv1d(num_layers=3, in_channels=6, out_channels=6, kernel_size=3, wt_levels=2)
 
@@ -632,34 +632,34 @@ if __name__ == '__main__':
 
 
 
-    # data = torch.rand(1, 6, 4)
+    data = torch.rand(1, 6, 4)
 
 
-    # # Define wavelet type and level
-    # wavelet_type = 'db1'
-    # in_channels = out_channels = 6
-    # levels = 2
-    # # Create filters
-    # dec_filters, rec_filters = create_wavelet_filter(wavelet_type, in_channels, out_channels)
-    # # Perform wavelet transform
-    # wt_output = wavelet_transform_1d(data, dec_filters)
-    # # Perform inverse wavelet transform
-    # iwt_output = inverse_wavelet_transform_1d(wt_output, rec_filters)
-    # # Print the results
-    # # print("Original data:")
-    # print("原始数据的维度", data.shape)
-    # print("原始数据:")
-    # print(data)
-    # print("分解后的维度:", wt_output.shape)
-    # # print("Inverse wavelet transform output (reconstructed data):")
-    # # print("分解后的数据:", wt_output)
-    # # print(iwt_output)
-    # print("重构后的维度:", iwt_output.shape)
-    # print("重构后的数据:")
+    # Define wavelet type and level
+    wavelet_type = 'db1'
+    in_channels = out_channels = 6
+    levels = 2
+    # Create filters
+    dec_filters, rec_filters = create_wavelet_filter(wavelet_type, in_channels, out_channels)
+    # Perform wavelet transform
+    wt_output = wavelet_transform_1d(data, dec_filters)
+    # Perform inverse wavelet transform
+    iwt_output = inverse_wavelet_transform_1d(wt_output, rec_filters)
+    # Print the results
+    # print("Original data:")
+    print("原始数据的维度", data.shape)
+    print("原始数据:")
+    print(data)
+    print("分解后的维度:", wt_output.shape)
+    # print("Inverse wavelet transform output (reconstructed data):")
+    # print("分解后的数据:", wt_output)
     # print(iwt_output)
-    # # 验证重构后的信号是否与原信号相同，添加阈值
-    # atol = 1e-6  # 绝对误差阈值
-    # rtol = 1e-5  # 相对误差阈值
+    print("重构后的维度:", iwt_output.shape)
+    print("重构后的数据:")
+    print(iwt_output)
+    # 验证重构后的信号是否与原信号相同，添加阈值
+    atol = 1e-6  # 绝对误差阈值
+    rtol = 1e-5  # 相对误差阈值
     # print("重构是否与原信号相同:", np.allclose(data, iwt_output, atol=atol, rtol=rtol))
 
 

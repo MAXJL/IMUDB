@@ -5,6 +5,9 @@ import pytorch_lightning as pl
 from networks.limu_bert import LIMUBertModel4Pretrain
 from box import Box
 
+import torch_dct as dct
+
+
 
 class Model(pl.LightningModule):
 
@@ -75,25 +78,23 @@ class Model(pl.LightningModule):
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
-        #检测normed_input_imu和normed_future_imu是不是一样的，不要直接打印，作差比较
-        # print("normed_input_imu.size(): ", normed_input_imu.size())
-        # print("normed_future_imu.size(): ", normed_future_imu.size())
-        # print("normed_input_imu - normed_future_imu: ", normed_input_imu - normed_future_imu)
-
-        #打印normed_future_imu的shape
-        # print("normed_future_imu.size(): ", normed_future_imu.size())
-
+    
         # MLM task
-        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
-        # print("mask_seqs.size(): ", mask_seqs.size())
+        
         hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
-        # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
+        # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
+            # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
         gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
         selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
-
-      
+        # print("After masked hat_imu_MLM.size(): ", selected_hat_imu_MLM.size())
+        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
+        # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
+        # print("gt_masked_seq.size(): ", gt_masked_seq.size())
         MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
             self.hyper_params.mlm_loss_weights)
+
+
+
 
         # Denoise task
         hat_imu_denoise = self.limu_bert_mlm.forward(normed_input_imu)
@@ -102,7 +103,6 @@ class Model(pl.LightningModule):
 
         # NSP task
         hat_imu_future = self.limu_bert_nsp.forward(normed_input_imu)
-
         hat_imu_future_denoised = self.limu_bert_nsp.forward(hat_imu_denoise)
         NSP_loss = (self.mse_loss(normed_future_imu, hat_imu_future)
                     + self.mse_loss(hat_imu_future_denoised, hat_imu_future)
@@ -117,7 +117,7 @@ class Model(pl.LightningModule):
         # continuity_loss = continuity_loss_future + continuity_loss_future_denoised
 
 
-        # Continuity task
+        # # Continuity task
         # hat_imu_continuity = self.limu_bert_cl.forward(normed_input_imu)
         # continuity_loss = self.mse_loss(hat_imu_continuity[:, :-1, :], hat_imu_continuity[:, 1:, :]) * float(
         #     self.hyper_params.continuity_loss_weight) 
@@ -130,7 +130,7 @@ class Model(pl.LightningModule):
         self.log("train_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_denoise_loss", denoise_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_NSP_loss", NSP_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log("train_continuity_loss", continuity_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # self.log("train_continuity_loss", continuity_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
         return {"loss": loss}
 
@@ -148,27 +148,7 @@ class Model(pl.LightningModule):
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
-
-
-        ##########修改#######
-        #打印mask_seqs的shape
-        # print("mask_seqs.size(): ", mask_seqs.size())
-        # #打印masked_pos的shape
-        # print("masked_pos.size(): ", masked_pos.size())
-        # #打印gt_masked_seq的shape
-        # print("gt_masked_seq.size(): ", gt_masked_seq.size())
-        # #打印normed_input_imu的shape
-        # print("normed_input_imu.size(): ", normed_input_imu.size())
-        # #打印normed_future_imu的shape
-        # print("normed_future_imu.size(): ", normed_future_imu.size())
-
-
-        # new_seq_length = 15
-        # masked_pos = torch.clamp(masked_pos, max=new_seq_length - 1)
-        # gt_masked_seq = torch.clamp(gt_masked_seq, max=new_seq_length - 1)
-        #################################
-
-        # MLM task
+              # MLM task
         hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
         # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
             # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
@@ -181,18 +161,36 @@ class Model(pl.LightningModule):
         MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
             self.hyper_params.mlm_loss_weights)
 
+
+
+
         # Denoise task
         hat_imu_denoise = self.limu_bert_mlm.forward(normed_input_imu)
         denoise_loss = self.mse_loss(normed_input_imu[:, -1, :], hat_imu_denoise[:, -1, :]) * float(
             self.hyper_params.denoise_loss_weights)
 
-        # NSP task
+        # NSP_loss = (self.mse_loss(dct_normed_future_imu, hat_imu_future)
+        #             + self.mse_loss(hat_imu_future_denoised, dct_hat_imu_future)
+        #             ) * float(
+        #     self.hyper_params.nsp_loss_weights)
+
         hat_imu_future = self.limu_bert_nsp.forward(normed_input_imu)
         hat_imu_future_denoised = self.limu_bert_nsp.forward(hat_imu_denoise)
         NSP_loss = (self.mse_loss(normed_future_imu, hat_imu_future)
                     + self.mse_loss(hat_imu_future_denoised, hat_imu_future)
                     ) * float(
             self.hyper_params.nsp_loss_weights)
+        #打印NSP_loss
+        # print("NSP_loss: ", NSP_loss)
+        
+        #打印前5个normed_future_imu和hat_imu_future的mse_loss
+        # for i in range(5):    
+        #     print("mse_loss: ", self.mse_loss(normed_future_imu[i], hat_imu_future[i]))
+        #     print("mse_loss_denoised: ", self.mse_loss(hat_imu_future_denoised[i], hat_imu_future[i]))
+
+        
+
+
         
 
         # continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(

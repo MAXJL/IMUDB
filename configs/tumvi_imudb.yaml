@@ -20,9 +20,9 @@ data:
   batch_size: 1024
 
   # where are raw data ?
-  data_dir: "/root/TUMVI/Raw"
+  data_dir: "/home/jia/MA/IMUDB-main/TUMVI/Raw"
   # where record preloaded data ?
-  caches_dir: "/root/TUMVI/Preload"
+  caches_dir: "/home/jia/MA/IMUDB-main/TUMVI/Preload"
   # set train, val and test sequence
   train_seqs: [
       'dataset-outdoors1_512_16',

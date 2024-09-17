@@ -52,7 +52,7 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
     rospy.init_node('uncertainty_publisher')
     uncertainty_pub = rospy.Publisher('/uncertainty', Float32, queue_size=10)
     
-    REJECT_MSE_THRE = 0.001
+    REJECT_MSE_THRE = 0.002
     ROUND_DIGIT = 6
     reject_cnt = 0
     msg_cnt = 0
