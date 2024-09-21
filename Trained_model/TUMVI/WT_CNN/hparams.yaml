@@ -1,0 +1,82 @@
+config:
+  data:
+    batch_size: 1024
+    caches_dir: /home/xin/IMUDB/IMUDB/TUMVI/Preload
+    data_dir: /home/xin/IMUDB/IMUDB/TUMVI/Raw
+    mask:
+      mask_alpha: 6
+      mask_prob: 0.8
+      mask_ratio: 0.15
+      max_gram: 10
+      replace_prob: 0.0
+    shuffle:
+      test: true
+      train: true
+      val: true
+    test_seqs:
+    - dataset-outdoors2_512_16
+    - dataset-outdoors4_512_16
+    - dataset-outdoors6_512_16
+    train_seqs:
+    - dataset-outdoors1_512_16
+    - dataset-outdoors3_512_16
+    - dataset-outdoors5_512_16
+    - dataset-outdoors7_512_16
+    - dataset-outdoors8_512_16
+    val_seqs:
+    - dataset-outdoors2_512_16
+    - dataset-outdoors4_512_16
+    - dataset-outdoors6_512_16
+  datasets_name: tumvi
+  debug: false
+  experiment_management_log: experiments/experiment_management_log.csv
+  experiment_name: tumvi_imudb
+  logs_dir: logs
+  model:
+    hyper_params:
+      T_0: 500
+      T_mult: 10
+      denoise_loss_weights: 10
+      emb_norm: true
+      eta_min: 1e-8
+      feature_num: 12
+      hidden: 72
+      hidden_ff: 144
+      mlm_loss_weights: 1
+      n_heads: 4
+      n_layers: 4
+      nn_arch: limu_bert
+      nsp_loss_weights: 1
+      seq_len: 120
+      starting_learning_rate: 0.001
+    inputs:
+      imu_sequence_number: 30
+    onnx:
+      inputs:
+      - x_imu
+      outputs:
+      - hat_imu
+    outputs:
+      imu_sequence_number: 30
+  model_name: imudb
+  note: equivalent to LIME-BERT, only outdoor datasets, T_0=500
+  sensors:
+    cam0:
+      frequency: 20
+      info: global-shutter, monochrome
+      model: MT9V034
+    ground_truth:
+      frequency: 20
+      pose:
+        frequency: 100
+        methods: vicon
+      position:
+        error_bound: 0.001
+        frequency: 20
+        methods: Leica MS50
+    imu:
+      frequency: 200
+      info: MEMS based, intrinsic calibrated
+      model: BMI160
+    synhronization: hardware-synchronized
+  stage: dev

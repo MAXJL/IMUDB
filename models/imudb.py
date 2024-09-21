@@ -62,6 +62,8 @@ class Model(pl.LightningModule):
     #     self.hyper_params.update(new_weights)
 
 
+
+
     def training_step(self, batch, batch_idx):
         """
         mask_seqs.size(): torch.Size([B, seq, 6])
@@ -148,11 +150,14 @@ class Model(pl.LightningModule):
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
-              # MLM task
+
+        # MLM task
         hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
         # print("hat_imu_MLM.size(): ", hat_imu_MLM.size())
             # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
         gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
+
+
         selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
         # print("After masked hat_imu_MLM.size(): ", selected_hat_imu_MLM.size())
         # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)

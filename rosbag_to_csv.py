@@ -1,6 +1,7 @@
 import rosbag
 import pandas as pd
 import numpy as np
+import os
 
 def bag_to_csv(bag_file, output_csv):
     bag = rosbag.Bag(bag_file)
@@ -31,6 +32,12 @@ def bag_to_csv(bag_file, output_csv):
     print(f"Saved data to {output_csv}")
 
 if __name__ == "__main__":
-    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/0917test/MH_03_medium.bag.new.imudb2.bag'  # 替换为您的bag文件路径
-    output_csv = '/home/jia/MA/IMUDB-main/EuRoC/bags/0917test/MH03_wavelet_cnn_trans_data.csv'  # 替换为您希望保存的csv文件路径
+
+    #terminal额外运行指令 export PYTHONPATH=/home/jia/anaconda3/envs/py36env/lib/python3.6/site-packages:/opt/ros/noetic/lib/python3/dist-packages
+    python_path = '/home/jia/anaconda3/envs/py36env/lib/python3.6/site-packages:/opt/ros/noetic/lib/python3/dist-packages'
+    os.environ['PYTHONPATH'] = python_path
+    
+
+    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/0921_feature_separation_wt_trans/V2_02_medium.bag.new.imudb2.bag'  # 替换为您的bag文件路径
+    output_csv = '/home/jia/MA/IMUDB-main/EuRoC/bags/0921_feature_separation_wt_trans/V202_data.csv'  # 替换为您希望保存的csv文件路径
     bag_to_csv(bag_file, output_csv)

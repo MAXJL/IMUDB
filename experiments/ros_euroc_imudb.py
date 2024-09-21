@@ -1,5 +1,11 @@
 # This script deserialize data from a ROS bag, running inference and save the data in a separate rosbags
 
+
+import sys
+print(sys.path)
+sys.path.insert(0, '/home/jia/anaconda3/envs/py36env/lib/python3.6/site-packages')
+sys.path.append('/opt/ros/noetic/lib/python3/dist-packages')
+
 import yaml
 import fire
 import rosbag
@@ -14,6 +20,9 @@ import os
 import time
 import rospy
 from std_msgs.msg import Float32
+
+
+
 
 """
 # the model_fp can be either onnx or chekpoints

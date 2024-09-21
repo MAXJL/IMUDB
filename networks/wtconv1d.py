@@ -416,35 +416,7 @@ class _ScaleModule(nn.Module):
             return torch.mul(weight, x)
 
 
-class W_Transform(nn.Module):
-    def __init__(self, wavelet='db1', level=1, mode='symmetric'):
-        super().__init__()
-        self.wavelet = wavelet
-        self.level = level
-        self.mode = mode
 
-    def forward(self, x):
-        # x: [batch_size, channels, seq_length]
-        batch_size, sequence_length, num_features = x.shape
-        print(f"Input shape is {x.shape}")
-        # Assuming each dwt operation halves the sequence length
-        concat_freq_components = np.zeros((batch_size, sequence_length // 2, num_features * 2))
-        
-        for i in range(batch_size):
-            for j in range(num_features):
-                x_np = x.detach().cpu().numpy()
-                cA, cD = pywt.dwt(x_np[i, :, j], self.wavelet, mode=self.mode)  # Perform DWT
-                # print(f"cA shape is {cA.shape}, cD shape is {cD.shape}")
-                # Concatenate low and high frequency components along the last dimension
-                concat_freq_components[i, :, 2 * j] = cA
-                concat_freq_components[i, :, 2 * j + 1] = cD
-                # print(f"IN LOOP:concat_freq_components shape is {concat_freq_components.shape}")
-        
-        # Convert the numpy array back to a torch tensor
-        concat_freq_components = torch.tensor(concat_freq_components)
-        print(f"concat_freq_components shape is {concat_freq_components.shape}")
-        
-        return concat_freq_components
 
 
 
@@ -537,6 +509,7 @@ def imodwt(w, filters, level):
         v_j = circular_convolve_s(h, g, w[:, j, :, :], v_j, j + 1)
     return v_j
 
+
 def circular_convolve_d(h_t, v_j_1, j):
     device = v_j_1.device
     batch_size, N, features = v_j_1.shape
@@ -570,24 +543,147 @@ def circular_convolve_s(h_t, g_t, w_j, v_j, j):
         v_j_1[:, t, :] = torch.sum(h_t[None, :, None].to(device) * w_p, dim=1) + torch.sum(g_t[None, :, None].to(device) * v_p, dim=1)
     return v_j_1
 
+def wavelet_transform_torch(signal, wavelet='db1', mode='symmetric'):
+    """
+    对每个特征通道沿时间步进行小波变换。
+    """
+    batch_size, seq_len, num_features = signal.size()
+    
+    # 调整tensor以将特征维度置于最后
+    signal = signal.permute(0, 2, 1)  # [batch_size, num_features, seq_len]
+
+    cA_list, cD_list = [], []
+    for i in range(batch_size):
+        cA_temp, cD_temp = [], []
+        for j in range(num_features):
+            # 将 PyTorch 张量转换为 NumPy 数组
+            signal_np = signal[i, j, :].cpu().numpy()
+            cA, cD = pywt.dwt(signal_np, wavelet, mode)
+            cA_temp.append(cA)
+            cD_temp.append(cD)
+        cA_list.append(cA_temp)
+        cD_list.append(cD_temp)
+
+    cA_torch = torch.tensor(np.array(cA_list), dtype=torch.float32, device=signal.device)
+    cD_torch = torch.tensor(np.array(cD_list), dtype=torch.float32, device=signal.device)
+    
+    # 调整维度顺序以匹配原始输入
+    return cA_torch.permute(0, 2, 1), cD_torch.permute(0, 2, 1)  # [batch_size, seq_len//2, num_features]
+
+def inverse_wavelet_transform_torch(cA, cD, wavelet='db1', mode='symmetric'):
+    """
+    对每个特征通道沿时间步进行逆小波变换。
+    """
+    batch_size, num_coeffs, num_features = cA.size()
+    # 将维度调整以匹配小波变换所需的格式
+    cA = cA.permute(0, 2, 1)  # [batch_size, num_features, num_coeffs]
+    cD = cD.permute(0, 2, 1)
+
+    reconstructed_signals =torch.zeros((batch_size, num_coeffs * 2, num_features))
+    
+    for i in range(batch_size):
+        for j in range(num_features):
+            reconstructed_signal = pywt.idwt(cA[i, j, :].cpu().detach().numpy(), cD[i, j, :].cpu().detach().numpy(), wavelet, mode)
+            reconstructed_signals[i, :, j] = torch.tensor(reconstructed_signal[:num_coeffs * 2], dtype=torch.float32, device=cA.device)  # 确保长度与原始长度一致
+
+    return reconstructed_signals  # [batch_size, seq_len, num_features]
+
 
 
 
 if __name__ == '__main__':
-    # 定义输入的参数
-    batch_size = 1024  # Batch size
-    sequence_length = 32  # Sequence length (S)
-    feature_dim = 6  # Feature dimension (D)
+    batch_size = 1
+    seq_length = 4
+    features = 6
+    x = torch.randn(batch_size, seq_length, features)
+    # 测试modwt和imodwt
+    filters = 'db1'
+    level = 2
+    wavecoeff = modwt(x, filters, level)
+    #提取高频和低频
+    high_freq = wavecoeff[:, :, :-features] #除了最后n个特征外的所有特征
+    low_freq = wavecoeff[:, :, -features:] #最后n个特征
+    print("HIGH_FREQ")
+    print(high_freq)
+    print("LOW_FREQ")
+    print(low_freq)
+    #打印shape
+    print("high_freq shape:", high_freq.shape)
+    print("low_freq shape:", low_freq.shape)
 
-    # 随机生成输入数据，形状为 [B, S, D]
-    input_data = torch.randn(batch_size, sequence_length, feature_dim)
 
-    # 定义WTConv1d的参数
-    in_channels = feature_dim
-    out_channels = feature_dim
-    kernel_size = 3
-    wt_levels = 2  # 小波分解的层数
-    dilation_rates=[2, 2, 2]
+    x_reconstructed = imodwt(wavecoeff, filters, level)
+    print("Original signal:")
+    print(x)
+    # print("Wavelet coefficients:")
+    # print(wavecoeff)
+    print("Reconstructed signal:")
+    print(x_reconstructed)
+    print("Reconstruction error:")
+    print(torch.mean((x - x_reconstructed) ** 2))
+    #打印输出的形状
+    print(f"Input shape: {x.shape}")
+    print(f"Wavelet coefficients shape: {wavecoeff.shape}")
+    print(f"Reconstructed signal shape: {x_reconstructed.shape}")
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#     low_freqs, high_freqs = wavelet_transform_torch(signals)
+
+# # 执行逆小波变换
+#     reconstructed_signals = inverse_wavelet_transform_torch(low_freqs, high_freqs)
+
+# # 检查原始信号和重建信号的差异
+#     # print("原始信号和重建信号的差异:", torch.mean((signals - reconstructed_signals) ** 2))
+ 
+#     print("输入维度:", signals.shape)
+#     print("分解后的维度:", low_freqs.shape, high_freqs.shape)
+#     print("重构后的维度:", reconstructed_signals.shape)
+
+#     # 验证重构后的信号是否与原信号相同，添加阈值
+#     atol = 1e-6  # 绝对误差阈值
+#     rtol = 1e-5  # 相对误差阈值
+#     print("重构是否与原信号相同:", torch.allclose(signals, reconstructed_signals, atol=atol, rtol=rtol))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     # # 实例化 WTConv1d
@@ -632,35 +728,35 @@ if __name__ == '__main__':
 
 
 
-    data = torch.rand(1, 6, 4)
+    # data = torch.rand(1, 6, 4)
 
 
-    # Define wavelet type and level
-    wavelet_type = 'db1'
-    in_channels = out_channels = 6
-    levels = 2
-    # Create filters
-    dec_filters, rec_filters = create_wavelet_filter(wavelet_type, in_channels, out_channels)
-    # Perform wavelet transform
-    wt_output = wavelet_transform_1d(data, dec_filters)
-    # Perform inverse wavelet transform
-    iwt_output = inverse_wavelet_transform_1d(wt_output, rec_filters)
-    # Print the results
-    # print("Original data:")
-    print("原始数据的维度", data.shape)
-    print("原始数据:")
-    print(data)
-    print("分解后的维度:", wt_output.shape)
-    # print("Inverse wavelet transform output (reconstructed data):")
-    # print("分解后的数据:", wt_output)
+    # # Define wavelet type and level
+    # wavelet_type = 'db1'
+    # in_channels = out_channels = 6
+    # levels = 2
+    # # Create filters
+    # dec_filters, rec_filters = create_wavelet_filter(wavelet_type, in_channels, out_channels)
+    # # Perform wavelet transform
+    # wt_output = wavelet_transform_1d(data, dec_filters)
+    # # Perform inverse wavelet transform
+    # iwt_output = inverse_wavelet_transform_1d(wt_output, rec_filters)
+    # # Print the results
+    # # print("Original data:")
+    # print("原始数据的维度", data.shape)
+    # print("原始数据:")
+    # print(data)
+    # print("分解后的维度:", wt_output.shape)
+    # # print("Inverse wavelet transform output (reconstructed data):")
+    # # print("分解后的数据:", wt_output)
+    # # print(iwt_output)
+    # print("重构后的维度:", iwt_output.shape)
+    # print("重构后的数据:")
     # print(iwt_output)
-    print("重构后的维度:", iwt_output.shape)
-    print("重构后的数据:")
-    print(iwt_output)
-    # 验证重构后的信号是否与原信号相同，添加阈值
-    atol = 1e-6  # 绝对误差阈值
-    rtol = 1e-5  # 相对误差阈值
-    # print("重构是否与原信号相同:", np.allclose(data, iwt_output, atol=atol, rtol=rtol))
+    # # 验证重构后的信号是否与原信号相同，添加阈值
+    # atol = 1e-6  # 绝对误差阈值
+    # rtol = 1e-5  # 相对误差阈值
+    # # print("重构是否与原信号相同:", np.allclose(data, iwt_output, atol=atol, rtol=rtol))
 
 
 
