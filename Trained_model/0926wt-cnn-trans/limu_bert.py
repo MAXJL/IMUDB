@@ -18,8 +18,6 @@ from wtconv1d import wavelet_transform_1d
 from wtconv1d import inverse_wavelet_transform_1d
 from wtconv1d import create_wavelet_filter
 
-from wtconv1d import w_transform
-from wtconv1d import inverse_wavelet_transform
 
 from wtconv1d import wavelet_transform
 from wtconv1d import wavelet_inverse_transform
@@ -29,10 +27,6 @@ from wtconv1d import imodwt
 
 from wtconv1d import wavelet_transform_torch
 from wtconv1d import inverse_wavelet_transform_torch
-
-import torch_dct as dct
-# from mLSTM import mLSTM
-# from sLSTM import sLSTM
 
 
 def split_last(x, shape):
@@ -203,8 +197,6 @@ class MultiHeadedSelfAttention_high(nn.Module):
         self.scores = None # for visualization
         # self.dynamic_weights = DynamicWeights(cfg) 
         self.n_heads = cfg.n_heads_high
-
-
     def forward(self, x):
         """
         x, q(query), k(key), v(value) : (B(batch_size), S(seq_len), D(dim))
@@ -357,9 +349,8 @@ class LIMUBertModel4Pretrain(nn.Module):
         self.norm_high = LayerNorm_high(cfg)
         self.decoder_high = nn.Linear(cfg.hidden_high, cfg.feature_num)
 
-        # self.conv1d_low = nn.Conv1d(in_channels=6, out_channels=6, kernel_size=3, stride=1, padding=1)
-        # self.conv1d_high = nn.Conv1d(in_channels=6, out_channels=6, kernel_size=3, stride=1, padding=1)
-
+        self.conv1d_low = nn.Conv1d(in_channels=6, out_channels=6, kernel_size=3, stride=1, padding=1)
+        self.conv1d_high = nn.Conv1d(in_channels=6, out_channels=6, kernel_size=3, stride=1, padding=1)
 
 
         # above is  transformer initialization
@@ -370,7 +361,10 @@ class LIMUBertModel4Pretrain(nn.Module):
         # self.wt_function = partial(wavelet_transform_1d, filters = self.wt_filter)
         # self.iwt_function = partial(inverse_wavelet_transform_1d, filters = self.iwt_filter) 
 
+
+
         self.transformer_low = Transformer(cfg) # encoder
+        
         self.transformer_high = Transformer_high(cfg) # encoder
 
 
@@ -386,18 +380,10 @@ class LIMUBertModel4Pretrain(nn.Module):
         high_freq_seqs = wavecoeff[:, :, :-6]
         low_freq_seqs = wavecoeff[:, :, -6:]
 
-
-        # # print("input_seqs shape:", input_seqs.shape)
-        # input_seqs = input_seqs.permute(0, 2, 1)
-        # input_seqs = self.wt_function(input_seqs) #shape: b, c, 2, w // 2 [1024, 6, 2, 15]
-        # low_freq_seqs = input_seqs[:, :, 0, :].permute(0,2,1) #低频部分
-        # high_freq_seqs = input_seqs[:, :, 1, :].permute(0,2,1) #高频部分
-        
-
   
         # Optional:
-        # low_freq_seqs = self.conv1d_low(low_freq_seqs.permute(0, 2, 1)).permute(0, 2, 1)
-        # high_freq_seqs = self.conv1d_high(high_freq_seqs.permute(0, 2, 1)).permute(0, 2, 1)
+        low_freq_seqs = self.conv1d_low(low_freq_seqs.permute(0, 2, 1)).permute(0, 2, 1)
+        high_freq_seqs = self.conv1d_high(high_freq_seqs.permute(0, 2, 1)).permute(0, 2, 1)
 
         h_masked_low = self.transformer_low(low_freq_seqs)
         if self.output_embed:
@@ -405,12 +391,9 @@ class LIMUBertModel4Pretrain(nn.Module):
         if masked_pos is not None:
             masked_pos = masked_pos[:, :, None].expand(-1, -1, h_masked_low.size(-1))
             h_masked_low = torch.gather(h_masked_low, 1, masked_pos)
-            masked_pos = masked_pos.unique(dim=-1)#去重 每个hidden都是一样的，恢复到【1024，4，1】 给下面高频的transformer用
-            masked_pos = masked_pos.squeeze(-1) #恢复到【1024，4】
-
         h_masked_low = self.activ(self.linear(h_masked_low))
         h_masked_low = self.norm(h_masked_low)
-        logits_lm_low = self.decoder(h_masked_low) 
+        logits_lm_low = self.decoder(h_masked_low)
 
         h_masked_high = self.transformer_high(high_freq_seqs)
         if masked_pos is not None:
@@ -418,28 +401,14 @@ class LIMUBertModel4Pretrain(nn.Module):
             h_masked_high = torch.gather(h_masked_high, 1, masked_pos)
         h_masked_high = self.activ(self.linear_high(h_masked_high))
         h_masked_high = self.norm_high(h_masked_high)
-        # logits_lm_high = self.decoder_high(h_masked_high)# [1024,15,6]
-        logits_lm_high = self.decoder(h_masked_high)# [1024,15,6]
+        logits_lm_high = self.decoder_high(h_masked_high)
 
 
-
-        # #logit_lm_high和logit_lm_low重新拼接成wavecoeff
-        # reconstructed_wavecoeff = torch.cat((logits_lm_high, logits_lm_low), dim=2)
-        # logits_lm = imodwt(reconstructed_wavecoeff, filters='db1', level=1)
-
-
-        #按照feature维度拼接
-        # logits_lm = torch.cat((logits_lm_low, logits_lm_high), dim=2) # [1024, 15, 12]
-        # batch_size, seq_length, feature_dim = logits_lm.shape  #
-        # num_channels = feature_dim // 2
-        # logits_lm = logits_lm.permute(0, 2, 1) # [1024, 12, 15]
-        # logits_lm = logits_lm.view(batch_size, num_channels, 2, seq_length) # [1024, 6, 2, 15]
-        # logits_lm = self.iwt_function(logits_lm)# [1024, 6, 30]
-        # logits_lm = logits_lm.permute(0, 2, 1)# [1024, 30, 6]
-
+        #logit_lm_high和logit_lm_low重新拼接成wavecoeff
         reconstructed_wavecoeff = torch.cat((logits_lm_high, logits_lm_low), dim=2)
 
         logits_lm = imodwt(reconstructed_wavecoeff, filters='db1', level=1)
+
 
 
         #####################################################################################
@@ -451,36 +420,6 @@ class LIMUBertModel4Pretrain(nn.Module):
 
 
 
-        # class DCTTransform(nn.Module):
-        #     def __init__(self):
-        #         super(DCTTransform, self).__init__()
-
-        #     def forward(self, x):
-        #         # 假设 x 的形状为 [batch_size, channels, length]
-        #         # 应用DCT于最后一个维度
-        #         return dct.dct(x, norm='ortho')
-        # class InverseDCTTransform(nn.Module):
-        #     def __init__(self):
-        #         super(InverseDCTTransform, self).__init__()
-
-        #     def forward(self, x):
-        #         # 假设 x 的形状为 [batch_size, channels, length]
-        #         # 应用逆DCT于最后一个维度
-        #         return dct.idct(x, norm='ortho')
-        # self.dct_transform = DCTTransform()  # 添加DCT变换模块
-        # self.inverse_dct_transform = InverseDCTTransform()  # 添加逆DCT变换模块
-        ########################DCT变换############################################
-        # input_seqs = input_seqs.permute(0, 2, 1)
-        # # print("input_seqs shape before dct:", input_seqs.shape)
-        # input_seqs = self.dct_transform(input_seqs)  # shape: [batch, channels, seq_len]
-        # # print("input_seqs shape after dct:", input_seqs.shape)
-        # input_seqs = input_seqs.permute(0, 2, 1)
-        #########################################################################
-        #############################DCT逆变换############################################
-        # logits_lm = logits_lm.permute(0, 2, 1)
-        # logits_lm = self.inverse_dct_transform(logits_lm)  # shape: [batch, channels, seq_len]
-        # logits_lm = logits_lm.permute(0, 2, 1)
-        #################################################################################
 
 
 
@@ -502,8 +441,7 @@ class LIMUBertModel4Pretrain(nn.Module):
         # input_seqs = concatenated_features.permute(0, 2, 1) 
         # print("input_seqs shape after wavelet transform:", input_seqs.shape)
         ############################################################################
-        
-        ##############################二级：小波逆变换##############################################
+         ##############################二级：小波逆变换##############################################
         # logits_lm = logits_lm.permute(0, 2, 1)
         # #分离优化后的特征
         # second_level_low_low = logits_lm[:, 0:6, :]
@@ -523,3 +461,18 @@ class LIMUBertModel4Pretrain(nn.Module):
         # logits_lm = original_data_reconstructed.permute(0, 2, 1)
         # print("logits_lm shape after iwt:", logits_lm.shape)
         ####################################################################################################
+
+
+        ########################DCT变换############################################
+        # input_seqs = input_seqs.permute(0, 2, 1)
+        # # print("input_seqs shape before dct:", input_seqs.shape)
+        # input_seqs = self.dct_transform(input_seqs)  # shape: [batch, channels, seq_len]
+        # # print("input_seqs shape after dct:", input_seqs.shape)
+        # input_seqs = input_seqs.permute(0, 2, 1)
+        #########################################################################
+
+        #############################DCT逆变换############################################
+        # logits_lm = logits_lm.permute(0, 2, 1)
+        # logits_lm = self.inverse_dct_transform(logits_lm)  # shape: [batch, channels, seq_len]
+        # logits_lm = logits_lm.permute(0, 2, 1)
+        #################################################################################

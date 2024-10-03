@@ -38,6 +38,6 @@ if __name__ == "__main__":
     os.environ['PYTHONPATH'] = python_path
     
 
-    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/0921_feature_separation_wt_trans/V2_02_medium.bag.new.imudb2.bag'  # 替换为您的bag文件路径
-    output_csv = '/home/jia/MA/IMUDB-main/EuRoC/bags/0921_feature_separation_wt_trans/V202_data.csv'  # 替换为您希望保存的csv文件路径
+    bag_file = '/home/jia/MA/IMUDB-main/EuRoC/bags/0929/MH_03_medium.bag.new.imudb2.bag'  # 替换为您的bag文件路径
+    output_csv = '/home/jia/MA/IMUDB-main/EuRoC/bags/0929/MH03_data.csv'  # 替换为您希望保存的csv文件路径
     bag_to_csv(bag_file, output_csv)

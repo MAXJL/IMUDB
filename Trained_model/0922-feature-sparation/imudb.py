@@ -5,7 +5,19 @@ import pytorch_lightning as pl
 from networks.limu_bert import LIMUBertModel4Pretrain
 from box import Box
 
-import torch_dct as dct
+
+def snr_loss(input, target):
+    signal_power = torch.sum(target ** 2, dim=1)
+    noise_power = torch.sum((input - target) ** 2, dim=1)
+    snr = 10 * torch.log10(signal_power / noise_power)
+    return -torch.mean(snr)
+
+def spectral_loss(input, target, fft_size=256):
+    input_fft = torch.fft.rfft(input, n=fft_size)
+    target_fft = torch.fft.rfft(target, n=fft_size)
+    return torch.mean(torch.abs(input_fft - target_fft))
+
+
 
 
 
@@ -26,16 +38,16 @@ class Model(pl.LightningModule):
         torch.cuda.empty_cache()
 
 
-    # #要引入动态权重调整机制，我们可以在模型中实现一个自适应的权重更新策略，根据各个任务在验证集上的表现来调整它们的损失函数权重。
+    # # #要引入动态权重调整机制，我们可以在模型中实现一个自适应的权重更新策略，根据各个任务在验证集上的表现来调整它们的损失函数权重。
     # def adjust_task_weights(self, validation_performance):
     #     # 根据验证集表现动态调整任务权重
     #     base_weights = {
     #         'MLM': self.hyper_params.mlm_loss_weights,
     #         'denoise': self.hyper_params.denoise_loss_weights,
     #         'NSP': self.hyper_params.nsp_loss_weights,
-    #         'continuity': self.hyper_params.continuity_loss_weight
+    #         # 'continuity': self.hyper_params.continuity_loss_weight
     #         }
-    #     performance_factor = 2.0
+    #     performance_factor = 1.0
     #     new_weights = {}
     #     for task, performance in validation_performance.items():
     #         base_weight = base_weights.get(task, 1)  # 默认为1，如果没有找到配置的权重
@@ -53,15 +65,12 @@ class Model(pl.LightningModule):
     #                 # adjustment = base_weight * (1 - np.tanh(performance * performance_factor))
     #                 adjustment = base_weight * (1 + np.tanh(performance * performance_factor) - 0.5)
     #                 print(f"Task: {task}, Base Weight: {base_weight}, Performance: {performance}, Adjustment: {adjustment}")
-    
-    #         if task == 'denoise':# 特定任务权重调整不应用最大最小限制
-    #             new_weights[task + '_loss_weights'] = max(min(adjustment,20), 10)
-    #         else:
-    #             new_weights[task + '_loss_weights'] = max(min(adjustment, 3), 0.5)
-    #     print("New weights: ", new_weights)
+    # #         if task == 'denoise':# 特定任务权重调整不应用最大最小限制
+    # #             new_weights[task + '_loss_weights'] = max(min(adjustment,20), 10)
+    # #         else:
+    # #             new_weights[task + '_loss_weights'] = max(min(adjustment, 3), 0.5)
+    # #     print("New weights: ", new_weights)
     #     self.hyper_params.update(new_weights)
-
-
 
 
     def training_step(self, batch, batch_idx):
@@ -80,21 +89,17 @@ class Model(pl.LightningModule):
         normed_input_imu = batch['outputs']['normed_input_imu']  # (B, Seq, 6)
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
-    
         # MLM task
-        
-        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
-        #     # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
-        # gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
-        # selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  
-        # # print("After masked hat_imu_MLM.size(): ", selected_hat_imu_MLM.size()
-        # MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
+        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
+        # MLM_loss = self.mse_loss(gt_masked_seq, hat_imu_MLM) * float(
         #     self.hyper_params.mlm_loss_weights)
-        
-        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
-        MLM_loss = self.mse_loss(gt_masked_seq, hat_imu_MLM) * float(
+   
+        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
+        # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
+        gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
+        selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
+        MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
             self.hyper_params.mlm_loss_weights)
-
 
         # Denoise task
         hat_imu_denoise = self.limu_bert_mlm.forward(normed_input_imu)
@@ -110,28 +115,32 @@ class Model(pl.LightningModule):
             self.hyper_params.nsp_loss_weights)
 
 
-        # continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight) 
-        # continuity_loss_future_denoised = self.mse_loss(hat_imu_future_denoised[:, :-1, :], hat_imu_future_denoised[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight)
-        # continuity_loss = continuity_loss_future + continuity_loss_future_denoised
+        # SNR_loss = snr_loss(hat_imu_denoise, normed_input_imu) * self.hyper_params.snr_loss_weight
+        # Spectral_loss = spectral_loss(hat_imu_denoise, normed_input_imu) * self.hyper_params.spectral_loss_weight
 
 
-        # # Continuity task
+
+
+
+        # ##Continuity task
         # hat_imu_continuity = self.limu_bert_cl.forward(normed_input_imu)
+        # # print("Output of limu_bert_cl.forward:", hat_imu_continuity.size())
+
+        # ##定义连续性损失 continuity_loss，计算相邻时间步之间的norm损失
+        # # continuity_loss = torch.norm(hat_imu_continuity[:, :-1, :] - hat_imu_continuity[:, 1:, :], p=2, dim=-1).mean() * float(self.hyper_params.continuity_loss_weight)
+        # # print("continuity_loss: ", continuity_loss)
         # continuity_loss = self.mse_loss(hat_imu_continuity[:, :-1, :], hat_imu_continuity[:, 1:, :]) * float(
         #     self.hyper_params.continuity_loss_weight) 
-
-
-        # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
+       
         loss = MLM_loss + denoise_loss + NSP_loss 
+        # loss = MLM_loss + denoise_loss + continuity_loss
 
         self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_denoise_loss", denoise_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("train_NSP_loss", NSP_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         # self.log("train_continuity_loss", continuity_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-
+ 
         return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
@@ -149,70 +158,67 @@ class Model(pl.LightningModule):
         normed_future_imu = batch['outputs']['normed_future_imu']  # (B, Seq-future, 6)
 
 
-        # MLM task
-        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
-        #  # 使用 torch.gather 从 hat_imu_MLM 中选取掩码位置的预测值
-        # gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
-        # selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
-        # MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
+
+        ##########修改#######
+        #打印mask_seqs的shape
+        # print("mask_seqs.size(): ", mask_seqs.size())
+        # #打印masked_pos的shape
+        # print("masked_pos.size(): ", masked_pos.size())
+        # #打印gt_masked_seq的shape
+        # print("gt_masked_seq.size(): ", gt_masked_seq.size())
+        # #打印normed_input_imu的shape
+        # print("normed_input_imu.size(): ", normed_input_imu.size())
+        # #打印normed_future_imu的shape
+        # print("normed_future_imu.size(): ", normed_future_imu.size())
+
+
+        # new_seq_length = 15
+        # masked_pos = torch.clamp(masked_pos, max=new_seq_length - 1)
+        # gt_masked_seq = torch.clamp(gt_masked_seq, max=new_seq_length - 1)
+        #################################
+
+        # # MLM task
+        # hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
+        # MLM_loss = self.mse_loss(gt_masked_seq, hat_imu_MLM) * float(
         #     self.hyper_params.mlm_loss_weights)
 
-
-        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs, masked_pos)
-        MLM_loss = self.mse_loss(gt_masked_seq, hat_imu_MLM) * float(
+        hat_imu_MLM = self.limu_bert_mlm.forward(mask_seqs)
+        gather_indices = masked_pos.unsqueeze(2).expand(-1, -1, hat_imu_MLM.size(2))
+        selected_hat_imu_MLM = torch.gather(hat_imu_MLM, 1, gather_indices)  # 输出形状应为 [1024, 4, 6]
+        MLM_loss = self.mse_loss(gt_masked_seq, selected_hat_imu_MLM) * float(
             self.hyper_params.mlm_loss_weights)
-
-
 
         # Denoise task
         hat_imu_denoise = self.limu_bert_mlm.forward(normed_input_imu)
         denoise_loss = self.mse_loss(normed_input_imu[:, -1, :], hat_imu_denoise[:, -1, :]) * float(
             self.hyper_params.denoise_loss_weights)
 
-        # NSP_loss = (self.mse_loss(dct_normed_future_imu, hat_imu_future)
-        #             + self.mse_loss(hat_imu_future_denoised, dct_hat_imu_future)
-        #             ) * float(
-        #     self.hyper_params.nsp_loss_weights)
-
+        # NSP task
         hat_imu_future = self.limu_bert_nsp.forward(normed_input_imu)
         hat_imu_future_denoised = self.limu_bert_nsp.forward(hat_imu_denoise)
         NSP_loss = (self.mse_loss(normed_future_imu, hat_imu_future)
                     + self.mse_loss(hat_imu_future_denoised, hat_imu_future)
                     ) * float(
             self.hyper_params.nsp_loss_weights)
-        #打印NSP_loss
-        # print("NSP_loss: ", NSP_loss)
-        
-        #打印前5个normed_future_imu和hat_imu_future的mse_loss
-        # for i in range(5):    
-        #     print("mse_loss: ", self.mse_loss(normed_future_imu[i], hat_imu_future[i]))
-        #     print("mse_loss_denoised: ", self.mse_loss(hat_imu_future_denoised[i], hat_imu_future[i]))
-
-        
 
 
-        
 
-        # continuity_loss_future = self.mse_loss(hat_imu_future[:, :-1, :], hat_imu_future[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight) 
-        # continuity_loss_future_denoised = self.mse_loss(hat_imu_future_denoised[:, :-1, :], hat_imu_future_denoised[:, 1:, :]) * float(
-        #     self.hyper_params.continuity_loss_weight)
-        # continuity_loss = continuity_loss_future + continuity_loss_future_denoised
-        # # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
-        # # ，而且保持相邻数据点之间的连续性
 
         # hat_imu_continuity = self.limu_bert_cl.forward(normed_input_imu)
         # continuity_loss = self.mse_loss(hat_imu_continuity[:, :-1, :], hat_imu_continuity[:, 1:, :]) * float(
         #     self.hyper_params.continuity_loss_weight) 
-        # loss = MLM_loss + denoise_loss + NSP_loss + continuity_loss
-
-        loss = MLM_loss + denoise_loss + NSP_loss 
+        # # continuity_loss = torch.norm(hat_imu_continuity[:, :-1, :] - hat_imu_continuity[:, 1:, :], p=2, dim=-1).mean() * float(self.hyper_params.continuity_loss_weight)
+        # loss = MLM_loss + denoise_loss  + continuity_loss
+        # # 时间连续性的约束。加入对时间序列数据平滑性的要求，使得模型在去噪过程中不仅关注单个数据点的准确性
+        # # ，而且保持相邻数据点之间的连续性
+        loss = MLM_loss + denoise_loss + NSP_loss
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_MLM_loss", MLM_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_denoise_loss", denoise_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log("val_NSP_loss", NSP_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         # self.log("val_continuity_loss", continuity_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+
 
         return {"loss": loss}
 
@@ -225,14 +231,14 @@ class Model(pl.LightningModule):
     #     avg_MLM_loss = self.trainer.callback_metrics['val_MLM_loss']
     #     avg_denoise_loss = self.trainer.callback_metrics['val_denoise_loss']
     #     avg_NSP_loss = self.trainer.callback_metrics['val_NSP_loss']
-    #     avg_continuity_loss = self.trainer.callback_metrics['val_continuity_loss']
+    #     # avg_continuity_loss = self.trainer.callback_metrics['val_continuity_loss']
 
 
     #     validation_performance = {
     #         'MLM': avg_MLM_loss,
     #         'denoise': avg_denoise_loss,
     #         'NSP': avg_NSP_loss,
-    #         'continuity': avg_continuity_loss
+    #         # 'continuity': avg_continuity_loss
     #     }
     #     print("Validation performance: ", validation_performance)
     #     self.adjust_task_weights(validation_performance)
@@ -242,7 +248,7 @@ class Model(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.starting_learning_rate)
-        # weight_decay=float(self.hyper_params.weight_decay)
+
         lr_scheduler = {
             'scheduler': torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,
                                                                               T_0=int(self.hyper_params.T_0),

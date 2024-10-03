@@ -53,14 +53,19 @@ data:
 
 model:
   inputs:
-    imu_sequence_number: 30 #120 # 200 Hz, namely, X /200 second
+    imu_sequence_number: 40 #120 # 200 Hz, namely, X /200 second
     #cam0_sequence_number: 3 #10 # 20 Hz, namely X/20 second
     #cam0_resize_to: 128
   outputs:
-    imu_sequence_number: 30 #120 # This is not being used yet # 10 # 200 Hz, namely X /200 second
+    imu_sequence_number: 40 #120 # This is not being used yet # 10 # 200 Hz, namely X /200 second
   hyper_params:
     starting_learning_rate: 0.001
-    denoise_loss_weights: 0
+    denoise_loss_weights: 10
+    nsp_loss_weights: 1
+    mlm_loss_weights: 1
+
+
+    weight_decay: 1e-5
     T_0: 5000
     T_mult: 10
     eta_min: 1e-8
@@ -69,9 +74,13 @@ model:
     # Below are copied from https://github.com/dapowan/LIMU-BERT-Public/blob/master/config/limu_bert.json#L4-L9
     feature_num: 6
     hidden: 72
+    hidden_high: 36
     hidden_ff: 144
+    hidden_ff_high: 72
     n_layers: 4
+    n_layers_high: 2
     n_heads: 4
+    n_heads_high: 2
     seq_len: 120
     emb_norm: true
   onnx:

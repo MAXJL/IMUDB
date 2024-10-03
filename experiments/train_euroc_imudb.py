@@ -44,6 +44,7 @@ def train(config_fp='configs/euroc_imudb.yaml', checkpoint_path=None):
         save_top_k=3,
         mode="min",
     )
+    # val_denoise_loss
     model = Model(config)
     trainer = pl.Trainer(gpus=1,
                           max_epochs=100000,

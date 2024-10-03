@@ -82,6 +82,8 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
     else:
         print("Initializing the ckpts_fp session ...")
         model = Model.load_from_checkpoint(ckpts_fp, strict=False)
+    
+
         backend = model.limu_bert_mlm.forward
         if get_model:
             return backend
@@ -100,6 +102,9 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
     max_loss = 0
     total_inference_time = 0  # 总推理时间
     inference_count = 0  # 推理次数
+    inference_time_list = []  # 存储每次推理的时间
+
+
     for topic, msg, t in bag.read_messages():
         if topic == '/cam0/image_raw':
             # https://github.com/eric-wieser/ros_numpy
@@ -136,7 +141,11 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
                 inference_time = end_time - start_time
                 total_inference_time += inference_time
                 inference_count += 1
+                inference_time_list.append(inference_time)
                 print(f"Inference time for this step: {inference_time:.6f} seconds")
+                # if len(inference_time_list) % 20 == 0:  # 每20次推理后打印时间
+                #     average_time = sum(inference_time_list[-20:]) / 20
+                #     print(f"Average inference time for last 20 steps: {average_time:.6f} seconds")
                 
                 hat_imu = hat_imu.detach().numpy()
                 # denorm
@@ -177,10 +186,10 @@ def process_a_bag_with_ckpts(bag_fp, ckpts_fp, config_fp, external_backend=None,
                 new_imu_msg.linear_acceleration.y = hat_imu_now[4]
                 new_imu_msg.linear_acceleration.z = hat_imu_now[5]
 
-                #打印stamp and imu输出
-                print(f"stamp: {new_imu_msg.header.stamp}")
+                # #打印stamp and imu输出
+                # print(f"stamp: {new_imu_msg.header.stamp}")
 
-                print(f"imu output: {hat_imu_now}")
+                # print(f"imu output: {hat_imu_now}")
 
             new_bag.write(topic, new_imu_msg, new_imu_msg.header.stamp)
         else:

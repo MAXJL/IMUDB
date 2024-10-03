@@ -37,9 +37,9 @@ def train(config_fp='configs/euroc_limu_bert.yaml'):
     logger = TensorBoardLogger(logdir, name=datasets_name, version=version)
     # saves a file like: my/path/sample-mnist-epoch=02-val_loss=0.32.ckpt
     checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss",
+        monitor="val_denoise_loss",
         dirpath=f"checkpoints_{hostname}/euroc_limu_bert/{version}",
-        filename="euroc_limu_bert-{epoch:02d}-{val_loss:.6f}",
+        filename="euroc_limu_bert-{epoch:02d}-{val_denoise_loss:.6f}",
         save_top_k=3,
         mode="min",
     )

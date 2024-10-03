@@ -16,10 +16,11 @@ data:
     val: true
     test: true
   batch_size: 1024
+
   # where are raw data ?
-  data_dir: "/home/jia/MA/IMUDB-main/EuRoC/Raw"
+  data_dir: "/home/xin/IMUDB/IMUDB/EuRoC/Raw"   
   # where record preloaded data ?
-  caches_dir: "/home/jia/MA/IMUDB-main/EuRoC/Preload"
+  caches_dir: "/home/xin/IMUDB/IMUDB/EuRoC/Preload"
   # set train, val and test sequence
   train_seqs: [
       'MH_01_easy',
@@ -50,19 +51,19 @@ data:
     mask_prob: 0.8
     replace_prob: 0.0
 
-model:
+model:  
   inputs:
-    imu_sequence_number: 40 #120 # 200 Hz, namely, X /200 second
+    imu_sequence_number: 30 #120 # 200 Hz, namely, X /200 second
   outputs:
-    imu_sequence_number: 40 #future IMU predict sequence number # This is not being used yet # 10 # 200 Hz, namely X /200 second 
+    imu_sequence_number: 30 #future IMU predict sequence number # This is not being used yet # 10 # 200 Hz, namely X /200 second
   hyper_params:
     starting_learning_rate: 0.001
     denoise_loss_weights: 10
     nsp_loss_weights: 1
     mlm_loss_weights: 1
     continuity_loss_weight: 1
-
-    weight_decay: 1e-5
+    # snr_loss_weight: 0.01
+    # spectral_loss_weight: 0.5
     T_0: 5000
     T_mult: 10
     eta_min: 1e-8
@@ -70,20 +71,12 @@ model:
     nn_arch: 'limu_bert' # This is not used in the experiment. Just for reference
     # Below are copied from https://github.com/dapowan/LIMU-BERT-Public/blob/master/config/limu_bert.json#L4-L9
     feature_num: 6
-    hidden: 36
-    hidden_high: 36
-    hidden_ff: 72
-    hidden_ff_high: 72
-    n_layers: 2
-    n_layers_high: 2
+    hidden: 72
+    hidden_ff: 144
+    n_layers: 4
     n_heads: 4
-    n_heads_high: 2
     seq_len: 120
     emb_norm: true
-    
-
-
-
   onnx:
     inputs: ['x_imu']
     outputs: ['hat_imu']
